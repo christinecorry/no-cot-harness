@@ -12,6 +12,15 @@ directly from the resumable store (`runs/sweep_store.jsonl`) instead: filter row
 in-flight condition can have a handful of landed rows and would be noisy/misleading otherwise).
 Rerun this script anytime the sweep advances — it always reflects the current store contents.
 
+Error bars: the repo's usual CI convention (`harness/stats.py`'s `paired_bootstrap_cis`, drawn
+via `plot_condition_match.py`'s `load_cis`) is a paired bootstrap over item-level correctness —
+that needs the raw per-item hits/misses, which this script's (model, dataset, condition) ->
+(correct, n) grouping has already collapsed. So each point here instead gets a 95% Wilson score
+interval computed directly from its (correct, n) count: the standard, better-behaved-at-small-n
+alternative to a normal approximation, and the defensible simple default for a mid-run sanity
+check. Drawn in the same visual style as `plot_condition_match.py`'s CIs (capsize=2, capthick=0.8,
+elinewidth=0.8) for consistency with the rest of the repo's figures.
+
     python -m presentation.plot_sanity_check_lines
     python -m presentation.plot_sanity_check_lines --dataset nhop_2
     python -m presentation.plot_sanity_check_lines --min-n 30
@@ -20,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -32,6 +42,7 @@ from presentation.figures import MARKERS, apply_style, cond_label, mask_adaptive
 
 RUN_NAME = "sanity_check_100"
 MIN_N_DEFAULT = 20
+WILSON_Z = 1.959964  # 95% two-sided normal quantile
 
 PANELS = [
     ("repeat", "Repeats", "number of problem repeats (r)"),
@@ -39,11 +50,23 @@ PANELS = [
 ]
 
 
-def load_store_accuracy(store_path: Path, datasets: set,
-                         min_n: int) -> Tuple[Dict[Tuple[str, str, str], float], Dict[Tuple[str, str, str], int]]:
+def wilson_ci(correct: int, n: int, z: float = WILSON_Z) -> Tuple[float, float]:
+    """95% Wilson score interval for a binomial proportion — better-behaved than the normal
+    approximation at small n or extreme p, and the right tool when only (correct, n) survive
+    (no per-item data to bootstrap over). Returns (lo, hi) as fractions in [0, 1]."""
+    if n == 0:
+        return (float("nan"), float("nan"))
+    phat = correct / n
+    denom = 1 + z * z / n
+    center = (phat + z * z / (2 * n)) / denom
+    margin = (z * math.sqrt(phat * (1 - phat) / n + z * z / (4 * n * n))) / denom
+    return (max(0.0, center - margin), min(1.0, center + margin))
+
+
+def load_store_counts(store_path: Path, datasets: set) -> Dict[Tuple[str, str, str], Tuple[int, int]]:
     """Group the raw resumable store by (model, dataset, condition), scoring only rows with
-    `error is None`. Returns (accuracy dict, n dict); a cell is present in `accuracy` only if
-    it cleared `min_n` landed (non-errored) rows — everything else stays a line gap."""
+    `error is None`. Returns (correct, n) per cell — the full landed counts, unfiltered by
+    `min_n` (filtering happens at plot time so coverage reporting still sees everything)."""
     correct: Dict[Tuple[str, str, str], int] = defaultdict(int)
     total: Dict[Tuple[str, str, str], int] = defaultdict(int)
     with store_path.open() as f:
@@ -58,15 +81,13 @@ def load_store_accuracy(store_path: Path, datasets: set,
             total[key] += 1
             if r.get("correct"):
                 correct[key] += 1
-    acc = {k: correct[k] / n for k, n in total.items() if n >= min_n}
-    n_landed = dict(total)
-    return acc, n_landed
+    return {k: (correct[k], n) for k, n in total.items()}
 
 
-def describe_coverage(n_landed: dict, models: List[str], dataset: str, min_n: int) -> str:
+def describe_coverage(counts: dict, models: List[str], dataset: str, min_n: int) -> str:
     lines = []
     for m in models:
-        conds = {c: n for (mm, d, c), n in n_landed.items() if mm == m and d == dataset}
+        conds = {c: n for (mm, d, c), (_correct, n) in counts.items() if mm == m and d == dataset}
         if not conds:
             lines.append(f"    {m}: no data yet")
             continue
@@ -76,7 +97,7 @@ def describe_coverage(n_landed: dict, models: List[str], dataset: str, min_n: in
     return "\n".join(lines)
 
 
-def plot_one_dataset(dataset: str, axes_spec: dict, acc: dict, models: List[str],
+def plot_one_dataset(dataset: str, axes_spec: dict, counts: dict, min_n: int, models: List[str],
                       out_path: Path) -> Path:
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.2))
     for ax, (axis_key, title, xlabel) in zip(axes, PANELS):
@@ -84,13 +105,25 @@ def plot_one_dataset(dataset: str, axes_spec: dict, acc: dict, models: List[str]
         xs = list(range(len(values)))
         for i, m in enumerate(models):
             color = f"C{i}"
-            ys = [acc.get((m, dataset, cond_label(axis_key, v) + "+md"), float("nan"))
-                  for v in values]
+            ys, lo_err, hi_err = [], [], []
+            for v in values:
+                key = (m, dataset, cond_label(axis_key, v) + "+md")
+                correct, n = counts.get(key, (0, 0))
+                if n < min_n:
+                    ys.append(float("nan"))
+                    lo_err.append(0.0)
+                    hi_err.append(0.0)
+                    continue
+                acc = correct / n
+                ci_lo, ci_hi = wilson_ci(correct, n)
+                ys.append(acc * 100)
+                lo_err.append((acc - ci_lo) * 100)
+                hi_err.append((ci_hi - acc) * 100)
             if all(y != y for y in ys):  # every point NaN -> nothing landed for this model yet
                 continue
-            ys_pct = [y * 100 if y == y else float("nan") for y in ys]
-            ax.plot(xs, ys_pct, marker=MARKERS[i % len(MARKERS)], markersize=4,
-                    linewidth=1.2, linestyle="-", color=color, label=config.short_model(m))
+            ax.errorbar(xs, ys, yerr=[lo_err, hi_err], marker=MARKERS[i % len(MARKERS)],
+                        markersize=4, linewidth=1.2, linestyle="-", color=color,
+                        capsize=2, capthick=0.8, elinewidth=0.8, label=config.short_model(m))
         ax.set_xticks(xs)
         ax.set_xticklabels([str(v) for v in values])
         ax.set_xlabel(xlabel)
@@ -101,7 +134,8 @@ def plot_one_dataset(dataset: str, axes_spec: dict, acc: dict, models: List[str]
             ax.legend(ncol=1, fontsize=8)
 
     caption = (f"Sanity check ({RUN_NAME}, n=100/condition target). Points require n>=20 landed "
-               f"items; gaps mean not enough data has landed yet. Mid-run snapshot, not final.")
+               f"items; error bars are 95% Wilson score intervals on (correct, n); gaps mean not "
+               f"enough data has landed yet. Mid-run snapshot, not final.")
     fig.text(0.5, 0.005, caption, ha="center", fontsize=8.5, fontweight="semibold", color="#111111")
     fig.tight_layout(rect=(0, 0.045, 1, 1))
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,16 +166,20 @@ def main(argv: List[str] | None = None) -> int:
     datasets = args.dataset or list(run_axes.keys())
     models = config.NAMED_RUNS[RUN_NAME]["models"]  # fixed order -> stable color/marker per model
 
-    acc, n_landed = load_store_accuracy(store_path, set(datasets), args.min_n)
-    acc = mask_adaptive(acc, tuple(datasets))
+    counts = load_store_counts(store_path, set(datasets))
+    # mask_adaptive operates on an accuracy dict keyed the same way; build one just for the mask,
+    # then drop any (model, dataset, condition) it flags from the raw counts before plotting.
+    acc_for_mask = {k: (c / n if n else float("nan")) for k, (c, n) in counts.items()}
+    kept_keys = mask_adaptive(acc_for_mask, tuple(datasets)).keys()
+    counts = {k: v for k, v in counts.items() if k in kept_keys}
 
     out_dir = Path(args.out_dir)
     for dataset in datasets:
         axes_spec = run_axes[dataset]
         out = out_dir / f"{RUN_NAME}_lines_{dataset}.png"
-        plot_one_dataset(dataset, axes_spec, acc, models, out)
+        plot_one_dataset(dataset, axes_spec, counts, args.min_n, models, out)
         print(f"wrote {out}")
-        print(describe_coverage(n_landed, models, dataset, args.min_n))
+        print(describe_coverage(counts, models, dataset, args.min_n))
     return 0
 
 
