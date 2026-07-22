@@ -79,6 +79,22 @@ CONDITION_MATCHED = {
     },
 }
 
+# Same as CONDITION_MATCHED, but gen_arithmetic uses its fixed 1,000-item subset
+# (`gen_arithmetic_1000` in registry.py) instead of the full 2,990 — gen_arithmetic is the
+# single biggest cost line item and, being generated data with no natural scarcity, is the one
+# dataset worth trimming; comp_math and n-hop stay at their full, fixed-size native counts.
+CONDITION_MATCHED_TRIMMED = {
+    "models": MODELS,
+    "n": 100000,
+    "axes": {
+        "gen_arithmetic_1000": dict(GEN_AXES, match_demos=True),
+        "comp_math": dict(COMP_AXES, match_demos=True),
+        "nhop_2": dict(HEADLINE_AXES, match_demos=True),
+        "nhop_3": dict(HEADLINE_AXES, match_demos=True),
+        "nhop_4": dict(HEADLINE_AXES, match_demos=True),
+    },
+}
+
 # A tiny slice for `sweep --pilot`-style smoke testing without spending much.
 PILOT_SPEC = {
     "models": MODELS,
@@ -90,4 +106,5 @@ NAMED_RUNS: dict[str, dict] = {
     "pilot": PILOT_SPEC,
     "plain_demos": PLAIN_DEMOS,
     "condition_matched": CONDITION_MATCHED,
+    "condition_matched_trimmed": CONDITION_MATCHED_TRIMMED,
 }

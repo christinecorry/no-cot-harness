@@ -67,6 +67,21 @@ DATASETS: Dict[str, Dataset] = {
         system_prompt=prompt.SYSTEM_PROMPT,
         filler_suffix=prompt.FILLER_INSTRUCTION_SUFFIX,
     ),
+    # A FIXED 1,000-item subset of gen_arithmetic — a separate saved file (not a `--n` runtime
+    # slice), so the same 1,000 items run every time regardless of what `--n` is passed elsewhere.
+    # Random sample, seed 42, not the first 1,000: gold-answer magnitudes are heavily tailed (a
+    # few problems produce huge results), and a contiguous slice measurably under-represents that
+    # tail (empirically checked: first-1000 mean |gold| ~1.7M vs the full set's ~7.2M; this random
+    # sample's mean ~7.0M tracks the full set closely) even though generation order itself has no
+    # difficulty structure (each of the 3000 problems is an independent draw from one seeded RNG).
+    "gen_arithmetic_1000": Dataset(
+        id="gen_arithmetic_1000",
+        eval_path=config.DATA_DIR / "gen_arithmetic" / "eval_1000.jsonl",
+        pool_path=config.DATA_DIR / "gen_arithmetic" / "fewshot_pool.jsonl",
+        scorer=scoring.INTEGER,
+        system_prompt=prompt.SYSTEM_PROMPT,
+        filler_suffix=prompt.FILLER_INSTRUCTION_SUFFIX,
+    ),
     "comp_math": Dataset(
         id="comp_math",
         eval_path=config.DATA_DIR / "comp_math" / "eval.jsonl",
