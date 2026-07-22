@@ -239,20 +239,61 @@ INTEGER = IntegerScorer()
 STRING_INT = StringIntScorer()
 
 
+# Some mandatory-reasoning endpoints bill a constant 1-token floor — an opened-and-closed think
+# block — on responses that answer immediately with no reasoning text; on a live probe every
+# immediate answer read exactly (1 token, 0 chars) while every deliberating response read 44-47
+# tokens WITH content, so >1 (not >0) is the real threshold and the chars guard still catches
+# real reasoning even at low token counts. Shared by `nocot_violation` and `classify_response` so
+# the two can never disagree about where "reasoning happened" starts.
+_REASONING_TOKEN_FLOOR = 1
+
+
 def nocot_violation(usage: Any, tool_violation: Any = None) -> bool:
     """True if a response violated the no-CoT constraint regardless of its answer: reported
     reasoning/thinking tokens OR visible reasoning content (some OpenRouter providers return the
     reasoning text while omitting the token count), or a structured-channel tool violation
     (truncated tool JSON — deliberation ate the output budget — or extra keys beside "answer").
-    The single shared rule; a violating row scores wrong, is recorded, and is never excluded.
-
-    Tolerance: reasoning_tokens <= 1 with ZERO reasoning content is NOT a violation. Some
-    mandatory-reasoning endpoints bill a constant 1-token floor — an opened-and-closed think block
-    — on responses that answer immediately with no reasoning text; on a live probe every immediate
-    answer read exactly (1 token, 0 chars) while every deliberating response read 44-47 tokens WITH
-    content, so the chars guard still catches real reasoning even at low token counts."""
+    The single shared rule; a violating row scores wrong, is recorded, and is never excluded."""
     u = usage or {}
-    return bool(u.get("reasoning_tokens", 0) > 1 or u.get("reasoning_chars", 0) > 0 or tool_violation)
+    return bool(u.get("reasoning_tokens", 0) > _REASONING_TOKEN_FLOOR
+                or u.get("reasoning_chars", 0) > 0 or tool_violation)
+
+
+def classify_response(rec: dict) -> str:
+    """Label one stored record by WHAT KIND of no-CoT behavior it shows — distinct from
+    `nocot_violation`'s single yes/no, since "the model refused" and "the model reasoned but
+    hid it" call for different follow-up (a refusal is a channel/prompt problem; hidden reasoning
+    is a measurement problem). One of:
+
+      "error"              — the call itself failed (transport/API error, not a real observation).
+      "external_thinking"  — reasoning is VISIBLE: prose before the answer (`answer_form ==
+                              "reasoning_first"`), reasoning content in a provider's dedicated
+                              field (`reasoning_chars > 0`), or a structured tool call that
+                              smuggled an extra key or got truncated by deliberation.
+      "internal_thinking"  — reasoning is HIDDEN: a reported token count with no visible text
+                              (`reasoning_tokens` above the 1-token reporting floor) — what the
+                              structured-channel token-cost comparison is built to catch, since
+                              `reasoning_tokens == 0` alone can't distinguish "didn't reason" from
+                              "reasoned but the API has no field to report it in."
+      "refusal"             — no usable output AND no reasoning signal of either kind: the model
+                              declined to engage, not a case of unreported computation.
+      "clean"               — an immediate answer with neither signal — genuine no-CoT compliance.
+
+    External is checked before internal: a response can show both signals, and visible reasoning
+    is the stronger, more specific claim (internal-only is inferred from a token count alone).
+    """
+    if rec.get("error") is not None:
+        return "error"
+    u = rec.get("usage") or {}
+    tool_violation = rec.get("tool_violation")
+    if (rec.get("answer_form") == "reasoning_first" or u.get("reasoning_chars", 0) > 0
+            or tool_violation in ("extra_keys", "truncated")):
+        return "external_thinking"
+    if u.get("reasoning_tokens", 0) > _REASONING_TOKEN_FLOOR:
+        return "internal_thinking"
+    if rec.get("answer_form") == "empty":
+        return "refusal"
+    return "clean"
 
 
 def rescore_record(rec: dict) -> dict:

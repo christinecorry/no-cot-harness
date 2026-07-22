@@ -408,6 +408,16 @@ def _print_smoke_report(records: List[Dict[str, Any]], agg: List[Dict[str, Any]]
         print(f"  {config.short_model(m):22} {dict(forms)}  reasoning_tokens={rtoks}  "
               f"reasoning_chars={rchars}  immediate={immediate}/{len(mrecs)}  -> {verdict}")
 
+    # WHAT KIND of non-compliance, not just whether: refusal (channel/prompt problem) and hidden
+    # reasoning (measurement problem — reasoning_tokens>0 with no visible trace) need different
+    # follow-up, and `answer_form`/`reasoning_tokens` alone don't distinguish them at a glance.
+    print("--- response kind BY MODEL (scoring.classify_response) ---")
+    for m in sorted({r["model"] for r in records}):
+        kinds: Dict[str, int] = defaultdict(int)
+        for r in (r for r in records if r["model"] == m):
+            kinds[scoring.classify_response(r)] += 1
+        print(f"  {config.short_model(m):22} {dict(kinds)}")
+
     if errors:
         print("\n--- errors (first 3) ---")
         for r in errors[:3]:
