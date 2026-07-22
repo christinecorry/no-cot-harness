@@ -474,6 +474,8 @@ def run_named(args: argparse.Namespace) -> int:
     spec = config.NAMED_RUNS[run_name]
     if args.n is not None:
         spec = {**spec, "n": args.n}  # local override; don't mutate the module-level spec
+    if args.models:
+        spec = {**spec, "models": args.models.split(",")}  # local override; e.g. run one model first
     _log(f"run={run_name} n={spec['n']} models={[config.short_model(m) for m in spec['models']]}")
 
     cells = enumerate_cells(spec, args.method)
@@ -527,7 +529,8 @@ def main(argv: List[str] | None = None) -> int:
     ap.add_argument("--max-calls", type=int, default=None, help="hard ceiling on cells this run")
     ap.add_argument("--no-report", action="store_true", help="skip significance + CIs (just aggregate)")
     ap.add_argument("--n", type=int, default=None, help="items/dataset (--smoke default 8; overrides a run's n)")
-    ap.add_argument("--models", help="comma-separated model ids for --smoke")
+    ap.add_argument("--models", help="comma-separated model ids; overrides --smoke's default set "
+                                      "or a named --run's spec")
     ap.add_argument("--datasets", help="comma-separated dataset ids for --smoke")
     ap.add_argument("--show", type=int, default=18, help="per-item rows --smoke prints (default 18)")
     ap.add_argument("--match-demos", action="store_true",
@@ -545,6 +548,8 @@ def main(argv: List[str] | None = None) -> int:
             spec = config.NAMED_RUNS[args.run]
             if args.n is not None:
                 spec = {**spec, "n": args.n}
+            if args.models:
+                spec = {**spec, "models": args.models.split(",")}
             estimate_table(spec, args.method)
             return 0
         return run_named(args)

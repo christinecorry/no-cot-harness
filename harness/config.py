@@ -102,9 +102,25 @@ PILOT_SPEC = {
     "axes": {"gen_arithmetic": {"repeat": [1, 5], "filler": [0, 100]}},
 }
 
+# Sanity check before committing to full scale: n=100/dataset, condition-matched, using the
+# 500-item subsets for gen_arithmetic/comp_math (cheaper than their full/1000-item counts for a
+# check that isn't the final measurement) and the full n-hop sets (no smaller tier exists there).
+SANITY_CHECK_100 = {
+    "models": MODELS,
+    "n": 100,
+    "axes": {
+        "gen_arithmetic_500": dict(GEN_AXES, match_demos=True),
+        "comp_math_500": dict(COMP_AXES, match_demos=True),
+        "nhop_2": dict(HEADLINE_AXES, match_demos=True),
+        "nhop_3": dict(HEADLINE_AXES, match_demos=True),
+        "nhop_4": dict(HEADLINE_AXES, match_demos=True),
+    },
+}
+
 NAMED_RUNS: dict[str, dict] = {
     "pilot": PILOT_SPEC,
     "plain_demos": PLAIN_DEMOS,
     "condition_matched": CONDITION_MATCHED,
     "condition_matched_trimmed": CONDITION_MATCHED_TRIMMED,
+    "sanity_check_100": SANITY_CHECK_100,
 }
