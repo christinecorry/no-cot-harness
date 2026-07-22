@@ -82,9 +82,29 @@ DATASETS: Dict[str, Dataset] = {
         system_prompt=prompt.SYSTEM_PROMPT,
         filler_suffix=prompt.FILLER_INSTRUCTION_SUFFIX,
     ),
+    # A FIXED 500-item subset of gen_arithmetic — same seeded (42) random-sample convention as
+    # gen_arithmetic_1000, saved as its own file so it never drifts if eval_full.jsonl changes.
+    "gen_arithmetic_500": Dataset(
+        id="gen_arithmetic_500",
+        eval_path=config.DATA_DIR / "gen_arithmetic" / "eval_500.jsonl",
+        pool_path=config.DATA_DIR / "gen_arithmetic" / "fewshot_pool.jsonl",
+        scorer=scoring.INTEGER,
+        system_prompt=prompt.SYSTEM_PROMPT,
+        filler_suffix=prompt.FILLER_INSTRUCTION_SUFFIX,
+    ),
     "comp_math": Dataset(
         id="comp_math",
         eval_path=config.DATA_DIR / "comp_math" / "eval.jsonl",
+        pool_path=config.DATA_DIR / "comp_math" / "fewshot_pool.jsonl",
+        scorer=scoring.INTEGER,
+        system_prompt=prompt.SYSTEM_PROMPT,
+        filler_suffix=prompt.FILLER_INSTRUCTION_SUFFIX,
+    ),
+    # A FIXED 500-item subset of comp_math (full set is 897) — same seeded (42) random-sample
+    # convention as gen_arithmetic_1000/500.
+    "comp_math_500": Dataset(
+        id="comp_math_500",
+        eval_path=config.DATA_DIR / "comp_math" / "eval_500.jsonl",
         pool_path=config.DATA_DIR / "comp_math" / "fewshot_pool.jsonl",
         scorer=scoring.INTEGER,
         system_prompt=prompt.SYSTEM_PROMPT,
