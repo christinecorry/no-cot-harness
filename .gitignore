@@ -1,0 +1,6 @@
+data/
+runs/
+.venv*/
+__pycache__/
+*.pyc
+results/aggregates/pilot_summary.json

@@ -1,0 +1,77 @@
+# Second Look — matplotlib house style
+# Derived from secondlookresearch.com: warm off-white ground, near-black text,
+# muted-gray secondary, deep-maroon signature accent, Montserrat headings.
+#
+# Use it from any plotting script:
+#     import matplotlib.pyplot as plt
+#     plt.style.use("secondlook")          # if installed via install-agents.sh
+#     # or, portable / CI-safe:
+#     plt.style.use("analysis/secondlook.mplstyle")
+#
+# Edit this one file to retune the brand everywhere.
+
+# --- canvas -----------------------------------------------------------------
+figure.facecolor:   F5F5F1
+axes.facecolor:     FBFBF9
+savefig.facecolor:  F5F5F1
+figure.dpi:         130
+savefig.dpi:        200
+savefig.bbox:       tight
+figure.figsize:     7.0, 4.5
+
+# --- type -------------------------------------------------------------------
+# Needs STATIC Montserrat weights installed (Regular/Medium/SemiBold/Bold). The
+# variable-font build registers only weight 100 (Thin) in matplotlib and renders
+# gray; see the setup guide. Base weight is medium for legible, dark text.
+font.family:        sans-serif
+font.sans-serif:    Montserrat, Helvetica Neue, Helvetica, Arial, DejaVu Sans
+font.serif:         EB Garamond, Georgia, DejaVu Serif
+font.weight:        medium
+text.color:         111111
+axes.titlesize:     14
+axes.titleweight:   bold
+axes.titlecolor:    000000
+axes.titlelocation: left
+axes.titlepad:      10
+axes.labelsize:     12
+axes.labelweight:   semibold
+axes.labelcolor:    111111
+figure.titlesize:   16
+figure.titleweight: bold
+
+# --- axes & grid (clean, editorial) -----------------------------------------
+axes.edgecolor:     888888
+axes.linewidth:     0.9
+axes.spines.top:    False
+axes.spines.right:  False
+axes.grid:          True
+axes.grid.axis:     y
+grid.color:         e0e0e0
+grid.linewidth:     0.8
+grid.alpha:         1.0
+axes.axisbelow:     True
+
+# --- ticks ------------------------------------------------------------------
+xtick.color:        666666
+ytick.color:        666666
+xtick.labelcolor:   111111
+ytick.labelcolor:   111111
+xtick.labelsize:    10
+ytick.labelsize:    10
+xtick.direction:    out
+ytick.direction:    out
+
+# --- lines & markers --------------------------------------------------------
+lines.linewidth:    2.0
+lines.markersize:   6
+lines.markeredgewidth: 0.0
+
+# --- series palette (maroon-led, brand-consistent, print-legible) -----------
+# 5e0000 maroon · d45d00 burnt orange · 1a1a1a ink · 9a0000 bright maroon
+# 666666 gray · c9a227 dark gold · 800000 maroon variant
+axes.prop_cycle: cycler('color', ['5e0000', 'd45d00', '1a1a1a', '9a0000', '666666', 'c9a227', '800000'])
+
+# --- legend -----------------------------------------------------------------
+legend.frameon:     False
+legend.fontsize:    10
+legend.title_fontsize: 10

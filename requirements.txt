@@ -1,0 +1,5 @@
+# Pinned for reproducibility. Every model is reached via OpenRouter (no native Anthropic SDK).
+openai>=2.28,<3       # the OpenRouter client (OpenAI-compatible chat-completions API)
+numpy>=1.26,<3        # paired bootstrap CIs (harness/stats.py)
+scipy>=1.11,<2        # paired t-tests (harness/stats.py)
+matplotlib>=3.8,<4    # figure rendering
