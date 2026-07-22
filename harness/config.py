@@ -102,6 +102,23 @@ PILOT_SPEC = {
     "axes": {"gen_arithmetic": {"repeat": [1, 5], "filler": [0, 100]}},
 }
 
+# Full-scale run using the 500-item subsets for gen_arithmetic/comp_math (cheaper than their
+# full/1000-item counts) and the full n-hop sets (no smaller tier exists there) — the next step
+# up from `sanity_check_100` once its results check out. n=100000 is a take-everything sentinel:
+# gen_arithmetic_500/comp_math_500 only have 500 rows each, so slicing at 100000 still returns all
+# of them; nhop_2/3/4 similarly return their full native counts (293/593/594) unslowed.
+CONDITION_MATCHED_500 = {
+    "models": MODELS,
+    "n": 100000,
+    "axes": {
+        "gen_arithmetic_500": dict(GEN_AXES, match_demos=True),
+        "comp_math_500": dict(COMP_AXES, match_demos=True),
+        "nhop_2": dict(HEADLINE_AXES, match_demos=True),
+        "nhop_3": dict(HEADLINE_AXES, match_demos=True),
+        "nhop_4": dict(HEADLINE_AXES, match_demos=True),
+    },
+}
+
 # Sanity check before committing to full scale: n=100/dataset, condition-matched, using the
 # 500-item subsets for gen_arithmetic/comp_math (cheaper than their full/1000-item counts for a
 # check that isn't the final measurement) and the full n-hop sets (no smaller tier exists there).
@@ -122,5 +139,6 @@ NAMED_RUNS: dict[str, dict] = {
     "plain_demos": PLAIN_DEMOS,
     "condition_matched": CONDITION_MATCHED,
     "condition_matched_trimmed": CONDITION_MATCHED_TRIMMED,
+    "condition_matched_500": CONDITION_MATCHED_500,
     "sanity_check_100": SANITY_CHECK_100,
 }
