@@ -1,4 +1,5 @@
-"""Mid-run sanity-check figures for the `sanity_check_100` sweep, one PNG per dataset.
+"""Mid-run figures for a condition-matched sweep (`--run`, default `sanity_check_100`), one PNG
+per dataset.
 
 Why this reads the raw store instead of the named-run aggregate: `sanity_check_100` was
 submitted as THREE SEPARATE `--run sanity_check_100 --models <one-model>` invocations (not one
@@ -22,6 +23,7 @@ check. Drawn in the same visual style as `plot_condition_match.py`'s CIs (capsiz
 elinewidth=0.8) for consistency with the rest of the repo's figures.
 
     python -m presentation.plot_sanity_check_lines
+    python -m presentation.plot_sanity_check_lines --run condition_matched_500
     python -m presentation.plot_sanity_check_lines --dataset nhop_2
     python -m presentation.plot_sanity_check_lines --min-n 30
 """
@@ -37,10 +39,10 @@ from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 
-from harness import config
+from harness import config, registry, schema
 from presentation.figures import MARKERS, apply_style, cond_label, mask_adaptive
 
-RUN_NAME = "sanity_check_100"
+DEFAULT_RUN_NAME = "sanity_check_100"
 MIN_N_DEFAULT = 20
 WILSON_Z = 1.959964  # 95% two-sided normal quantile
 
@@ -98,7 +100,7 @@ def describe_coverage(counts: dict, models: List[str], dataset: str, min_n: int)
 
 
 def plot_one_dataset(dataset: str, axes_spec: dict, counts: dict, min_n: int, models: List[str],
-                      out_path: Path) -> Path:
+                      out_path: Path, run_name: str, target_n: int) -> Path:
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.2))
     for ax, (axis_key, title, xlabel) in zip(axes, PANELS):
         values = axes_spec.get(axis_key, [])
@@ -133,9 +135,10 @@ def plot_one_dataset(dataset: str, axes_spec: dict, counts: dict, min_n: int, mo
         if ax.get_legend_handles_labels()[0]:
             ax.legend(ncol=1, fontsize=8)
 
-    caption = (f"Sanity check ({RUN_NAME}, n=100/condition target). Points require n>=20 landed "
-               f"items; error bars are 95% Wilson score intervals on (correct, n); gaps mean not "
-               f"enough data has landed yet. Mid-run snapshot, not final.")
+    caption = (f"{run_name} (this dataset's target n={target_n}/condition). Points require "
+               f"n>={min_n} landed items; error bars are 95% Wilson score intervals on "
+               f"(correct, n); gaps mean not enough data has landed yet. Mid-run snapshot, not "
+               f"final.")
     fig.text(0.5, 0.005, caption, ha="center", fontsize=8.5, fontweight="semibold", color="#111111")
     fig.tight_layout(rect=(0, 0.045, 1, 1))
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -147,10 +150,12 @@ def plot_one_dataset(dataset: str, axes_spec: dict, counts: dict, min_n: int, mo
 def main(argv: List[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--run", default=DEFAULT_RUN_NAME, choices=list(config.NAMED_RUNS),
+                    help=f"named run to plot (default: {DEFAULT_RUN_NAME})")
     ap.add_argument("--store", default=str(config.RUNS_DIR / "sweep_store.jsonl"))
     ap.add_argument("--dataset", action="append",
                     help="dataset id to plot (repeatable); default: every dataset in "
-                         f"NAMED_RUNS['{RUN_NAME}']['axes']")
+                         "the chosen --run's axes")
     ap.add_argument("--min-n", type=int, default=MIN_N_DEFAULT,
                     help="minimum landed (non-errored) items required to plot a point")
     ap.add_argument("--out-dir", default=str(config.FIGURES_DIR))
@@ -162,9 +167,9 @@ def main(argv: List[str] | None = None) -> int:
         print(f"missing store: {store_path}")
         return 1
 
-    run_axes = config.NAMED_RUNS[RUN_NAME]["axes"]
+    run_axes = config.NAMED_RUNS[args.run]["axes"]
     datasets = args.dataset or list(run_axes.keys())
-    models = config.NAMED_RUNS[RUN_NAME]["models"]  # fixed order -> stable color/marker per model
+    models = config.NAMED_RUNS[args.run]["models"]  # fixed order -> stable color/marker per model
 
     counts = load_store_counts(store_path, set(datasets))
     # mask_adaptive operates on an accuracy dict keyed the same way; build one just for the mask,
@@ -176,8 +181,13 @@ def main(argv: List[str] | None = None) -> int:
     out_dir = Path(args.out_dir)
     for dataset in datasets:
         axes_spec = run_axes[dataset]
-        out = out_dir / f"{RUN_NAME}_lines_{dataset}.png"
-        plot_one_dataset(dataset, axes_spec, counts, args.min_n, models, out)
+        # NAMED_RUNS[args.run]["n"] can be a take-everything sentinel (e.g. 100000 for
+        # condition_matched_500), which isn't the real per-condition target — the dataset's own
+        # eval file length is the actual target n for that dataset's panels.
+        target_n = min(len(schema.load_jsonl(registry.DATASETS[dataset].eval_path)),
+                       config.NAMED_RUNS[args.run]["n"])
+        out = out_dir / f"{args.run}_lines_{dataset}.png"
+        plot_one_dataset(dataset, axes_spec, counts, args.min_n, models, out, args.run, target_n)
         print(f"wrote {out}")
         print(describe_coverage(counts, models, dataset, args.min_n))
     return 0
