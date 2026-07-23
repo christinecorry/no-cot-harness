@@ -22,12 +22,47 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from . import backends, config, registry
-from .sweep import STORE_PATH, _cond_key, _score, _structured_fields, enumerate_cells, load_done_sigs
+from .sweep import STORE_PATH, _cond_key, _score, _structured_fields, enumerate_cells
 
 
 def _client() -> Any:
     import anthropic
     return anthropic.Anthropic()
+
+
+# A cell's `method` label encodes which TRANSPORT collected it (e.g. "openrouter_prefill" vs
+# "anthropic_native_prefill" — see backends.py), but a batch-collected row should NOT re-collect
+# an (model, dataset, condition, item) already gathered via OpenRouter for the same underlying
+# elicitation: prompts were verified byte-identical between transports for both models' actual
+# methods (prefill / tool), so a plain sig match (which is transport-specific) would silently
+# re-pay for everything OpenRouter already has. Normalize to the logical method family for dedup.
+_METHOD_FAMILY = {
+    "openrouter_prefill": "prefill", "anthropic_native_prefill": "prefill",
+    "openrouter_tool": "structured", "anthropic_native_tool": "structured",
+    "openrouter_adaptive": "append", "append_noreason": "append", "anthropic_native_append": "append",
+    "structured_json": "structured",
+}
+
+
+def _content_key(model: str, dataset: str, condition: str, item_id: str, method: str) -> tuple:
+    return (model, dataset, condition, item_id, _METHOD_FAMILY.get(method, method))
+
+
+def _covered_content_keys() -> set:
+    """(model, dataset, condition, item_id, method_family) already collected SUCCESSFULLY by
+    ANY transport — the cross-transport dedup set for batch submission (see `_METHOD_FAMILY`)."""
+    covered = set()
+    if not STORE_PATH.exists():
+        return covered
+    with STORE_PATH.open() as f:
+        for line in f:
+            if not line.strip():
+                continue
+            r = json.loads(line)
+            if r.get("error") is None:
+                covered.add(_content_key(r["model"], r["dataset"], r["condition"], r["item_id"],
+                                         r["method"]))
+    return covered
 
 
 def _short_id(sig: str) -> str:
@@ -48,15 +83,48 @@ def _batch_request(cell: Dict[str, Any]) -> Dict[str, Any]:
     return {"custom_id": _short_id(cell["sig"]), "params": params}
 
 
+# A Message Batch caps at 100,000 requests OR 256 MB, whichever comes first (Anthropic's own
+# batch-processing docs). This repo's condition-matched cells can run well past 20KB/request at
+# high filler/repeat, so at full 500-item scale the REQUEST COUNT stays far under 100k while the
+# byte size is what actually binds — chunk by measured size, not by a fixed count, with real
+# margin below the hard cap since request sizes vary a lot cell to cell.
+_MAX_BATCH_BYTES = 200_000_000
+
+
+def _chunk_cells_by_size(cells: List[Dict[str, Any]],
+                         max_bytes: int = _MAX_BATCH_BYTES) -> List[List[Dict[str, Any]]]:
+    chunks: List[List[Dict[str, Any]]] = []
+    current: List[Dict[str, Any]] = []
+    current_bytes = 0
+    for c in cells:
+        size = len(json.dumps(_batch_request(c)).encode())
+        if current and current_bytes + size > max_bytes:
+            chunks.append(current)
+            current, current_bytes = [], 0
+        current.append(c)
+        current_bytes += size
+    if current:
+        chunks.append(current)
+    return chunks
+
+
 def submit_batch(cells: List[Dict[str, Any]]) -> str:
     """Submit one Anthropic Message Batch covering `cells` (every cell must be an anthropic/* id
-    — native transport only). Returns the batch id; nothing is written to the store yet."""
+    — native transport only; must already fit under the API's 100k-request/256MB cap — see
+    `_chunk_cells_by_size` for splitting a larger cell list). Returns the batch id; nothing is
+    written to the store yet."""
     non_anthropic = [c["model"] for c in cells if not c["model"].startswith("anthropic/")]
     if non_anthropic:
         raise ValueError(f"anthropic_batch only supports anthropic/* ids, got: {set(non_anthropic)}")
     client = _client()
     batch = client.messages.batches.create(requests=[_batch_request(c) for c in cells])
     return batch.id
+
+
+def submit_batches(cells: List[Dict[str, Any]]) -> List[str]:
+    """Split `cells` into API-limit-sized chunks (see `_chunk_cells_by_size`) and submit one
+    Message Batch per chunk. Returns all batch ids, in submission order."""
+    return [submit_batch(chunk) for chunk in _chunk_cells_by_size(cells)]
 
 
 def poll_and_collect(batch_id: str, cells_by_sig: Dict[str, Dict[str, Any]], *,
@@ -111,7 +179,7 @@ def poll_and_collect(batch_id: str, cells_by_sig: Dict[str, Dict[str, Any]], *,
 def main(argv: List[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Submit/collect a native Anthropic Batch")
     ap.add_argument("--submit", action="store_true")
-    ap.add_argument("--poll", metavar="BATCH_ID")
+    ap.add_argument("--poll", metavar="BATCH_ID(S)", help="one batch id, or comma-separated several")
     ap.add_argument("--run", choices=list(config.NAMED_RUNS))
     ap.add_argument("--models", help="comma-separated anthropic/* model ids")
     ap.add_argument("--n", type=int, default=None)
@@ -123,13 +191,18 @@ def main(argv: List[str] | None = None) -> int:
             spec = {**spec, "models": args.models.split(",")}
         if args.n is not None:
             spec = {**spec, "n": args.n}
-        cells = enumerate_cells(spec, None)
-        done = load_done_sigs()
-        todo = [c for c in cells if c["sig"] not in done]
-        print(f"submitting {len(todo)} cells ({len(cells) - len(todo)} already in store)…")
-        batch_id = submit_batch(todo)
+        cells = enumerate_cells(spec, None, transport="anthropic_native")
+        covered = _covered_content_keys()
+        todo = [c for c in cells
+               if _content_key(c["model"], c["dataset"],
+                                _cond_key(c["cond"].label, c.get("match_demos", False)),
+                                c["item"]["id"], c["method"]) not in covered]
+        print(f"submitting {len(todo)} cells ({len(cells) - len(todo)} already covered by ANY "
+              f"transport)…")
+        batch_ids = submit_batches(todo)
         ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        print(f"[{ts}] batch id: {batch_id}  (poll with --poll {batch_id})")
+        print(f"[{ts}] {len(batch_ids)} batch(es): {','.join(batch_ids)}")
+        print(f"  poll with --poll {','.join(batch_ids)}")
         return 0
 
     if args.poll:
@@ -141,10 +214,12 @@ def main(argv: List[str] | None = None) -> int:
             spec = {**spec, "models": args.models.split(",")}
         if args.n is not None:
             spec = {**spec, "n": args.n}
-        cells = enumerate_cells(spec, None)
+        cells = enumerate_cells(spec, None, transport="anthropic_native")
         cells_by_sig = {c["sig"]: c for c in cells}
-        written = poll_and_collect(args.poll, cells_by_sig)
-        print(f"wrote {written} rows to {STORE_PATH}")
+        total_written = 0
+        for batch_id in args.poll.split(","):
+            total_written += poll_and_collect(batch_id, cells_by_sig)
+        print(f"wrote {total_written} rows to {STORE_PATH}")
         return 0
 
     ap.print_help()
