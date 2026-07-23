@@ -53,7 +53,8 @@ class Dataset:
 class Model:
     id: str
     provider: str                    # "anthropic" | "openai" | "openrouter"
-    batch_input_rate: Optional[float]  # $/M batch input; None = provider has no batch endpoint
+    batch_input_rate: Optional[float]   # $/M native Anthropic Batch API input; None = no batch path
+    batch_output_rate: Optional[float]  # $/M native Anthropic Batch API output; None = no batch path
     sync_rate_in: float              # $/M standard input
     sync_rate_out: float             # $/M standard output
 
@@ -128,19 +129,21 @@ DATASETS: Dict[str, Dataset] = {
 
 
 MODELS: Dict[str, Model] = {
-    # Rates verified live against OpenRouter /models. All three route via the OpenRouter alias
-    # namespace rather than a native provider SDK — see the root README's transport note.
-    "anthropic/claude-opus-4.5":  Model("anthropic/claude-opus-4.5", "openrouter", None, 5.00, 25.00),
+    # Rates verified live against OpenRouter /models; matches native Anthropic pricing exactly for
+    # both anthropic/* ids (checked against claude.com/pricing) — no OpenRouter markup either way.
+    # Batch rates (native Anthropic Batch API only — OpenRouter has no batch endpoint, so gpt-5.6-sol
+    # has none): 50% off both directions, confirmed on the same pricing page.
+    "anthropic/claude-opus-4.5":  Model("anthropic/claude-opus-4.5", "openrouter", 2.50, 12.50, 5.00, 25.00),
     # Verified live: accepts the reasoning-disable parameter cleanly (4/4 test calls,
     # reasoning_tokens=0, no reasoning content) — same price tier as gpt-5.5, its predecessor here.
-    "openai/gpt-5.6-sol":         Model("openai/gpt-5.6-sol", "openrouter", None, 5.00, 30.00),
+    "openai/gpt-5.6-sol":         Model("openai/gpt-5.6-sol", "openrouter", None, None, 5.00, 30.00),
     # Adaptive-thinking-only: rejects an explicit reasoning-disable parameter under every channel
     # (verified live) — its no-CoT compliance instead rests on either a strict system prompt (the
     # `append` channel, scored wrong if any reasoning is reported) or a forced tool call
     # (`structured` — its default here; `--method append` forces the imperfect natural channel
     # instead, for a controlled comparison). See the root README for the caveat on what a forced
     # tool call does and doesn't prove about internal reasoning.
-    "anthropic/claude-fable-5":   Model("anthropic/claude-fable-5", "openrouter", None, 10.00, 50.00),
+    "anthropic/claude-fable-5":   Model("anthropic/claude-fable-5", "openrouter", 5.00, 25.00, 10.00, 50.00),
 }
 
 
@@ -150,7 +153,7 @@ def model_info(model_id: str) -> Model:
     if model_id in MODELS:
         return MODELS[model_id]
     if "/" in model_id:
-        return Model(model_id, "openrouter", None, 5.00, 30.00)
+        return Model(model_id, "openrouter", None, None, 5.00, 30.00)
     return Model(model_id, "openai", None, 5.00, 30.00)
 
 

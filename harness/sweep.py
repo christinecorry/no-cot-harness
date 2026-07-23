@@ -1,4 +1,7 @@
-"""Run an accuracy sweep synchronously through the OpenRouter API, with a resumable result store.
+"""Run an accuracy sweep synchronously, with a resumable result store. Default transport is
+OpenRouter; anthropic/* ids can optionally route through the native Anthropic API instead
+(`--transport anthropic_native`, --smoke only so far — see harness/anthropic_batch.py for the
+native Batch API path, which reuses this module's cell/scoring logic but isn't synchronous).
 
 A sweep evaluates every (model, dataset, method, condition, item) cell. Results are stored in a
 JSONL keyed by a signature of that 5-tuple, so a run is idempotent: re-running skips cells that
@@ -14,6 +17,7 @@ Without --method, each (model, dataset) cell uses `registry.resolve_method`'s st
 
     python -m harness.sweep --smoke --n 20                          # live e2e check
     python -m harness.sweep --smoke --n 5 --match-demos             # condition-matched e2e check
+    python -m harness.sweep --smoke --n 5 --transport anthropic_native --models anthropic/claude-opus-4.5
     python -m harness.sweep --run condition_matched --estimate      # cost table, no submit
     python -m harness.sweep --run condition_matched --max-budget-usd 50
 """
@@ -44,13 +48,17 @@ def _cond_key(cond_label: str, match_demos: bool = False) -> str:
     return f"{cond_label}+md" if match_demos else cond_label
 
 
-def enumerate_cells(spec: Dict[str, Any], forced_method: str | None = None) -> List[Dict[str, Any]]:
+def enumerate_cells(spec: Dict[str, Any], forced_method: str | None = None, *,
+                    transport: str = "openrouter") -> List[Dict[str, Any]]:
     """Expand a sweep spec into individual work cells.
 
     Each (model, dataset) resolves its own no-CoT method (`registry.resolve_method`; `--method`
-    forces one everywhere). A cell carries both the CLI method (`elicitation`, what routes it) and
-    the backend's fine-grained store label (`method`, what keys it), so one sweep can mix models
-    and methods, with every cell keyed by the channel it actually ran under.
+    forces one everywhere) — transport-agnostic by design, so the same method is used regardless
+    of which transport sends it. A cell carries both the CLI method (`elicitation`, what routes
+    it) and the backend's fine-grained store label (`method`, what keys it), so one sweep can mix
+    models and methods, with every cell keyed by the channel it actually ran under. `transport`
+    ("openrouter" default | "anthropic_native") is a whole-invocation choice, not a per-cell one —
+    see `backends.backend_for`.
     """
     n = spec["n"]
     cells: List[Dict[str, Any]] = []
@@ -62,13 +70,14 @@ def enumerate_cells(spec: Dict[str, Any], forced_method: str | None = None) -> L
         match_demos = bool(axes.get("match_demos"))
         for m in spec["models"]:
             method = registry.resolve_method(m, ds, forced_method)
-            label = backends.backend_for(m, method, ds.answer_schema).method
+            label = backends.backend_for(m, method, ds.answer_schema, transport=transport).method
             pool = pools.setdefault(ds.pool_path, schema.load_jsonl(ds.pool_path))
             for cond in conds:
                 for item in items:
                     cells.append({
                         "method": label, "elicitation": method, "model": m, "dataset": dataset,
                         "cond": cond, "pool": pool, "item": item, "match_demos": match_demos,
+                        "transport": transport,
                         "sig": signature(label, m, dataset, _cond_key(cond.label, match_demos),
                                          item["id"]),
                     })
@@ -93,7 +102,8 @@ def load_done_sigs() -> set:
 def _cell_params(cell: Dict[str, Any]) -> Dict[str, Any]:
     return backends.request_params(cell["model"], cell["elicitation"], cell["pool"], cell["item"],
                                    cell["cond"], registry.DATASETS[cell["dataset"]],
-                                   match_demos=cell.get("match_demos", False))
+                                   match_demos=cell.get("match_demos", False),
+                                   transport=cell.get("transport", "openrouter"))
 
 
 def estimate_sync_cost(cells: List[Dict[str, Any]]) -> float:
@@ -136,6 +146,12 @@ def _structured_fields(backend: Any, resp: Any) -> Dict[str, Any]:
             "tool_violation": backend.tool_violation(resp)}
 
 
+def _backend_for_cell(cell: Dict[str, Any], answer_schema: str = "integer") -> Any:
+    """`backends.backend_for` for a cell dict — every call site needs the same three fields."""
+    return backends.backend_for(cell["model"], cell["elicitation"], answer_schema,
+                                transport=cell.get("transport", "openrouter"))
+
+
 def _eval_cell(cell: Dict[str, Any], client: Any) -> Dict[str, Any]:
     """Run one cell synchronously: render → assemble prompt → call the model → parse → score.
 
@@ -145,7 +161,7 @@ def _eval_cell(cell: Dict[str, Any], client: Any) -> Dict[str, Any]:
     """
     m, cond, item = cell["model"], cell["cond"], cell["item"]
     ds = registry.DATASETS[cell["dataset"]]
-    bk = backends.backend_for(m, cell["elicitation"], ds.answer_schema)
+    bk = _backend_for_cell(cell, ds.answer_schema)
     rec: Dict[str, Any] = {"method": cell["method"], "model": m, "dataset": cell["dataset"],
                            "condition": _cond_key(cond.label, cell.get("match_demos", False)),
                            "item_id": item["id"], "gold": item["gold_answer"]}
@@ -179,7 +195,7 @@ def _clients_for(cells: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     clients: Dict[str, Any] = {}
     for c in cells:
-        bk = backends.backend_for(c["model"], c["elicitation"])
+        bk = _backend_for_cell(c)
         name = type(bk).__name__
         if name not in clients:
             clients[name] = bk.client()
@@ -208,7 +224,7 @@ def run_sync_cells(cells: List[Dict[str, Any]], *, workers: int = 3,
     counters = {"written": 0, "errors": 0}
 
     def _run(cell: Dict[str, Any]) -> None:
-        client = clients[type(backends.backend_for(cell["model"], cell["elicitation"])).__name__]
+        client = clients[type(_backend_for_cell(cell)).__name__]
         rec = _eval_cell(cell, client)
         rec["sig"] = cell["sig"]
         with lock:
@@ -426,19 +442,21 @@ def _print_smoke_report(records: List[Dict[str, Any]], agg: List[Dict[str, Any]]
 
 
 def run_smoke(n: int, models: List[str], datasets: List[str], show: int,
-              forced_method: str | None = None, match_demos: bool = False) -> int:
+              forced_method: str | None = None, match_demos: bool = False, *,
+              transport: str = "openrouter") -> int:
     """Live synchronous correctness check (the e2e gate): exercise the full eval path — prompt
     assembly, no-CoT enforcement, parsing, scoring — on a small slice, print a per-item table +
     aggregate, and confirm reasoning_tokens==0. Full per-item records (with problem text) go to the
     gitignored store under runs/; an aggregate-only summary (no problem text) goes to results/.
-    `match_demos`: condition-matches every dataset's smoke axes (see `prompt.build_messages`)."""
+    `match_demos`: condition-matches every dataset's smoke axes (see `prompt.build_messages`).
+    `transport`: "openrouter" (default) or "anthropic_native" — see `backends.backend_for`."""
     axes = dict(SMOKE_AXES, match_demos=True) if match_demos else dict(SMOKE_AXES)
     spec = {"models": models, "n": n, "axes": {d: dict(axes) for d in datasets}}
-    cells = enumerate_cells(spec, forced_method)
+    cells = enumerate_cells(spec, forced_method, transport=transport)
     clients = _clients_for(cells)
     records = []
     for cell in cells:
-        rec = _eval_cell(cell, clients[type(backends.backend_for(cell["model"], cell["elicitation"])).__name__])
+        rec = _eval_cell(cell, clients[type(_backend_for_cell(cell)).__name__])
         rec["problem"] = cell["item"]["problem"]  # for the per-item table + full (gitignored) save
         records.append(rec)
 
@@ -536,12 +554,17 @@ def main(argv: List[str] | None = None) -> int:
     ap.add_argument("--match-demos", action="store_true",
                     help="condition-match every few-shot demo to the query's repeat/filler "
                          "condition (opt-in; default renders demos bare)")
+    ap.add_argument("--transport", default="openrouter", choices=["openrouter", "anthropic_native"],
+                    help="--smoke only for now (--run/--estimate assume openrouter; "
+                         "harness/anthropic_batch.py is the native-batch path); anthropic/* ids "
+                         "only for anthropic_native")
     args = ap.parse_args(argv)
 
     if args.smoke:
         models = args.models.split(",") if args.models else config.MODELS
         datasets = args.datasets.split(",") if args.datasets else config.SMOKE_DEFAULT_DATASETS
-        return run_smoke(args.n or 8, models, datasets, args.show, args.method, args.match_demos)
+        return run_smoke(args.n or 8, models, datasets, args.show, args.method, args.match_demos,
+                         transport=args.transport)
 
     if args.run:
         if args.estimate:
