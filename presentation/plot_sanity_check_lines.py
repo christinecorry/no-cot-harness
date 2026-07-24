@@ -158,6 +158,9 @@ def main(argv: List[str] | None = None) -> int:
                          "the chosen --run's axes")
     ap.add_argument("--min-n", type=int, default=MIN_N_DEFAULT,
                     help="minimum landed (non-errored) items required to plot a point")
+    ap.add_argument("--models", help="comma-separated model ids; overrides the chosen --run's "
+                                      "own model list (e.g. to add a model run separately, like "
+                                      "opus-5, alongside the run's original set)")
     ap.add_argument("--out-dir", default=str(config.FIGURES_DIR))
     args = ap.parse_args(argv)
 
@@ -169,7 +172,8 @@ def main(argv: List[str] | None = None) -> int:
 
     run_axes = config.NAMED_RUNS[args.run]["axes"]
     datasets = args.dataset or list(run_axes.keys())
-    models = config.NAMED_RUNS[args.run]["models"]  # fixed order -> stable color/marker per model
+    # fixed order -> stable color/marker per model
+    models = args.models.split(",") if args.models else config.NAMED_RUNS[args.run]["models"]
 
     counts = load_store_counts(store_path, set(datasets))
     # mask_adaptive operates on an accuracy dict keyed the same way; build one just for the mask,
