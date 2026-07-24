@@ -22,12 +22,33 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from . import backends, config, registry
-from .sweep import STORE_PATH, _cond_key, _score, _structured_fields, enumerate_cells
+from .sweep import STORE_PATH, _cell_params, _cond_key, _score, _structured_fields, enumerate_cells
 
 
 def _client() -> Any:
     import anthropic
     return anthropic.Anthropic()
+
+
+def estimate_batch_cost(cells: List[Dict[str, Any]]) -> float:
+    """Rough pre-submit estimate at BATCH rates (no API call): ~chars/4 input tokens per
+    (model, dataset, condition) sample × the count, priced at `Model.batch_input_rate`/
+    `batch_output_rate` — the batch-rate counterpart of `sweep.estimate_sync_cost`, which prices
+    at the standard (non-batch) rate and would overstate cost by 2x here."""
+    by_combo: Dict[tuple, Dict[str, Any]] = {}
+    counts: Dict[tuple, int] = {}
+    for c in cells:
+        key = (c["model"], c["dataset"], c["cond"].label)
+        counts[key] = counts.get(key, 0) + 1
+        by_combo.setdefault(key, c)
+    total = 0.0
+    for key, sample in by_combo.items():
+        mi = registry.model_info(sample["model"])
+        out_tokens = registry.DATASETS[sample["dataset"]].max_answer_tokens
+        p = _cell_params(sample)
+        chars = sum(len(str(msg["content"])) for msg in p["messages"]) + len(str(p.get("system", "")))
+        total += counts[key] * (chars / 4 * mi.batch_input_rate + out_tokens * mi.batch_output_rate) / 1e6
+    return total
 
 
 # A cell's `method` label encodes which TRANSPORT collected it (e.g. "openrouter_prefill" vs
@@ -183,6 +204,9 @@ def main(argv: List[str] | None = None) -> int:
     ap.add_argument("--run", choices=list(config.NAMED_RUNS))
     ap.add_argument("--models", help="comma-separated anthropic/* model ids")
     ap.add_argument("--n", type=int, default=None)
+    ap.add_argument("--max-budget-usd", type=float, default=None,
+                    help="with --submit: abort (no batch created) if the batch-rate estimate "
+                         "exceeds this")
     args = ap.parse_args(argv)
 
     if args.submit:
@@ -197,6 +221,15 @@ def main(argv: List[str] | None = None) -> int:
                if _content_key(c["model"], c["dataset"],
                                 _cond_key(c["cond"].label, c.get("match_demos", False)),
                                 c["item"]["id"], c["method"]) not in covered]
+        if not todo:
+            print("nothing to submit; every cell is already covered.")
+            return 0
+        if args.max_budget_usd is not None:
+            est = estimate_batch_cost(todo)
+            print(f"estimated cost ≈ ${est:.2f} (cap ${args.max_budget_usd:.2f})")
+            if est > args.max_budget_usd:
+                print("ABORT: estimate exceeds --max-budget-usd; no batch created.")
+                return 3
         print(f"submitting {len(todo)} cells ({len(cells) - len(todo)} already covered by ANY "
               f"transport)…")
         batch_ids = submit_batches(todo)
