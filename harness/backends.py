@@ -391,13 +391,13 @@ class OpenRouterToolBackend(OpenRouterBackend):
 
 # Opus 4.5 (extended-thinking-only): thinking is opt-in, omitting it is the no-CoT state.
 #
-# Fable 5 specifically (not a general "adaptive models" rule — each model needs its own check,
-# same as `_MANDATORY_REASONING`): 400s on `thinking: {type: "enabled"}`. Suppression attempt:
-# `thinking: {type: "adaptive"}, output_config: {effort: "low"}` — "none" is NOT a valid effort
-# value (verified live: 400s, "Input should be 'low', 'medium', 'high', 'xhigh' or 'max'"; "low" is
-# the actual minimum) — + the strict prompt; `scoring.nocot_violation` is the real enforcement
-# regardless of whether this helps.
-_NATIVE_ADAPTIVE_THINKING = {"anthropic/claude-fable-5"}
+# Fable 5 and Opus 5 specifically (not a general "adaptive models" rule — each model needs its
+# own check, same as `_MANDATORY_REASONING`): both 400 on `thinking: {type: "enabled"}`.
+# Suppression attempt: `thinking: {type: "adaptive"}, output_config: {effort: "low"}` — "none" is
+# NOT a valid effort value (verified live: 400s, "Input should be 'low', 'medium', 'high', 'xhigh'
+# or 'max'"; "low" is the actual minimum) — + the strict prompt; `scoring.nocot_violation` is the
+# real enforcement regardless of whether this helps.
+_NATIVE_ADAPTIVE_THINKING = {"anthropic/claude-fable-5", "anthropic/claude-opus-5"}
 
 
 def _native_thinking_params(model: str) -> Dict[str, Any]:

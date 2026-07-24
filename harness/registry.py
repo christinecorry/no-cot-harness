@@ -144,6 +144,13 @@ MODELS: Dict[str, Model] = {
     # instead, for a controlled comparison). See the root README for the caveat on what a forced
     # tool call does and doesn't prove about internal reasoning.
     "anthropic/claude-fable-5":   Model("anthropic/claude-fable-5", "openrouter", 5.00, 25.00, 10.00, 50.00),
+    # Same price tier as opus-4.5, verified live against both OpenRouter /models and native
+    # claude.com/pricing (no premium for the newer model). Verified live: adaptive-thinking-only
+    # (400s on manual `thinking.type.enabled`, like fable-5 — NOT extended-thinking-only like
+    # opus-4.5) AND rejects assistant-message prefill outright ("This model does not support
+    # assistant message prefill" — a hard 400, not even a soft duplicate-instead-of-continue like
+    # gpt-5.6-sol). Defaults to `structured` (forced tool call), same reasoning as fable-5.
+    "anthropic/claude-opus-5":    Model("anthropic/claude-opus-5", "openrouter", 2.50, 12.50, 5.00, 25.00),
 }
 
 
@@ -174,6 +181,9 @@ _DEFAULT_METHOD: Dict[str, str] = {
     "anthropic/claude-opus-4.5": "prefill",
     "openai/gpt-5.6-sol": "append",
     "anthropic/claude-fable-5": "structured",
+    # Adaptive-thinking-only (like fable-5) AND hard-rejects prefill outright ("This model does
+    # not support assistant message prefill", native API) — same default as fable-5, same reason.
+    "anthropic/claude-opus-5": "structured",
 }
 
 
