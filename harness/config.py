@@ -61,7 +61,7 @@ def short_dataset(dataset: str) -> str:
 # red, every OpenAI model a shade of teal/blue, so the provider reads at a glance across a
 # figure instead of an arbitrary flat palette cycling by position.
 _PROVIDER_PALETTES: Dict[str, List[str]] = {
-    "anthropic": ["6e0000", "b23a2e", "e0785f", "8c3a3a"],
+    "anthropic": ["4a1010", "c1440e", "e8998d"],  # dark maroon, burnt orange, light red
     "openai": ["1a7a6e", "3d5a80", "0f4c5c"],
 }
 _OTHER_PALETTE = ["666666", "1a1a1a", "c9a227"]
