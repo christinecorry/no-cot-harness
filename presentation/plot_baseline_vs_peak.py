@@ -65,7 +65,7 @@ def _cond_short_label(cond: str) -> str:
 
 
 def plot_one_dataset(dataset: str, peaks: Dict[Tuple[str, str], Panel], models: List[str],
-                     out_path: Path, alpha: float = 0.001) -> Path:
+                     out_path: Path) -> Path:
     fig, ax = plt.subplots(figsize=(max(7, 2.2 * len(models)), 5.5))
     width = 0.25
     group_gap = 1.0
@@ -121,12 +121,7 @@ def plot_one_dataset(dataset: str, peaks: Dict[Tuple[str, str], Panel], models: 
     ax.set_ylabel("accuracy (%)")
     ax.set_ylim(0, y_max)
     ax.set_title(f"Baseline vs peak — {config.short_dataset(dataset)}")
-    fig.text(0.5, 0.01,
-             "Peak = highest-scoring repeat/filler condition per model (labeled at each bar's "
-             f"base). '*' = significant vs baseline (Holm-corrected paired t-test, p<{alpha}); "
-             "unmarked = not significant.",
-             ha="center", fontsize=8, color="#333333")
-    fig.tight_layout(rect=(0, 0.05, 1, 1))
+    fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path)
     plt.close(fig)
@@ -157,7 +152,7 @@ def main(argv: List[str] | None = None) -> int:
     out_dir = Path(args.out_dir)
     for dataset in datasets:
         out = out_dir / f"{args.run}_baseline_vs_peak_{dataset}.png"
-        plot_one_dataset(dataset, peaks, models, out, alpha=args.alpha)
+        plot_one_dataset(dataset, peaks, models, out)
         print(f"wrote {out}")
         for model in models:
             baseline_acc, peak_repeat, peak_filler = peaks.get((model, dataset), (None, None, None))
