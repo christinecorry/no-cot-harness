@@ -20,7 +20,6 @@ from harness import config, stats as hstats
 from presentation.figures import apply_style
 
 DEFAULT_RUN_NAME = "condition_matched_500"
-_LINE_COLORS = ["5e0000", "d45d00", "1a1a1a", "c9a227", "666666", "800000"]
 
 Panel = Tuple[Optional[float], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]  # baseline, peak_repeat_row, peak_filler_row
 
@@ -63,8 +62,9 @@ def plot_one_dataset(dataset: str, peaks: Dict[Tuple[str, str], Panel], models: 
     # A bar too short (e.g. 4-hop's few-percent accuracies) can't fit the condition label
     # inside it — below this height, the label prints just above the bar instead.
     short_bar_cutoff = 0.12 * y_max
+    colors = config.model_colors(models)
 
-    for mi, model in enumerate(models):
+    for model in models:
         baseline_acc, peak_repeat, peak_filler = peaks.get((model, dataset), (None, None, None))
         if baseline_acc is None:
             continue
@@ -72,7 +72,7 @@ def plot_one_dataset(dataset: str, peaks: Dict[Tuple[str, str], Panel], models: 
                 peak_repeat["acc_cond"] * 100 if peak_repeat else float("nan"),
                 peak_filler["acc_cond"] * 100 if peak_filler else float("nan")]
         rows = [None, peak_repeat, peak_filler]
-        color = f"#{_LINE_COLORS[mi % len(_LINE_COLORS)]}"
+        color = f"#{colors[model]}"
         centers = []
         for bi, (val, row) in enumerate(zip(vals, rows)):
             if val != val:  # NaN -> no such condition for this dataset

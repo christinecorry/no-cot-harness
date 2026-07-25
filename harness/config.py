@@ -1,7 +1,9 @@
 """Shared configuration: paths, models, condition grids, and the named-run registry."""
 from __future__ import annotations
 
+from collections import defaultdict
 from pathlib import Path
+from typing import Dict, List
 
 HARNESS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = HARNESS_DIR.parent
@@ -53,6 +55,29 @@ _DATASET_DISPLAY = {
 def short_dataset(dataset: str) -> str:
     """A compact display label for a dataset id, e.g. 'gen_arithmetic_500' -> 'Gen-Arithmetic'."""
     return _DATASET_DISPLAY.get(dataset, dataset)
+
+
+# Per-provider color families for multi-model figures: every Anthropic model gets a shade of
+# red, every OpenAI model a shade of teal/blue, so the provider reads at a glance across a
+# figure instead of an arbitrary flat palette cycling by position.
+_PROVIDER_PALETTES: Dict[str, List[str]] = {
+    "anthropic": ["6e0000", "b23a2e", "e0785f", "8c3a3a"],
+    "openai": ["1a7a6e", "3d5a80", "0f4c5c"],
+}
+_OTHER_PALETTE = ["666666", "1a1a1a", "c9a227"]
+
+
+def model_colors(models: List[str]) -> Dict[str, str]:
+    """model id -> hex color (no '#'), grouped by provider family (see above). Within a
+    provider, models get distinct shades in the order they appear in `models`."""
+    counters: Dict[str, int] = defaultdict(int)
+    colors: Dict[str, str] = {}
+    for m in models:
+        provider = m.split("/")[0] if "/" in m else ""
+        palette = _PROVIDER_PALETTES.get(provider, _OTHER_PALETTE)
+        colors[m] = palette[counters[provider] % len(palette)]
+        counters[provider] += 1
+    return colors
 
 
 def conditions_for(axes: dict):

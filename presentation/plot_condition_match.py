@@ -38,6 +38,7 @@ def plot_one_dataset(dataset: str, plain_path: Path, matched_path: Path, out_pat
 
     models = plain_meta["models"]
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.2))
+    colors = config.model_colors(models)
     panels = [
         ("repeat", REPEAT_VALUES, "Repeats", "number of problem repeats (r)"),
         ("filler", FILLER_VALUES, "Filler", "filler length (f)"),
@@ -46,7 +47,7 @@ def plot_one_dataset(dataset: str, plain_path: Path, matched_path: Path, out_pat
     for ax, (axis, values, title, xlabel) in zip(axes, panels):
         xs = list(range(len(values)))
         for i, m in enumerate(models):
-            color = f"C{i}"
+            color = f"#{colors[m]}"
             for acc, cis, style, label_suffix in (
                 (plain_acc, plain_cis, "-", "plain demos"),
                 (matched_acc, matched_cis, "--", "matched demos"),
