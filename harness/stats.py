@@ -29,14 +29,27 @@ def load_item_scores(spec: Dict[str, Any], method: str | None = None) -> Dict[Ce
     """Per-item correctness for every cell in `spec`, keyed (model, dataset, condition) ->
     {item_id: ok}. `method` is the run's forced CLI method (None = each model's static default).
 
-    Mirrors `sweep.aggregate`: only cells in the spec, and only non-errored rows, are counted.
+    Mirrors `sweep.aggregate`, EXCEPT matching by (model, dataset, condition, item_id) rather than
+    the cell's `sig` — `sig` bakes in the method label, which differs by TRANSPORT
+    ("openrouter_prefill" vs "anthropic_native_prefill" for the identical elicitation), while
+    `enumerate_cells` always assumes `transport="openrouter"` when building `sig` here. Since
+    condition-matched cells are commonly collected via native/batch transport, matching on `sig`
+    would silently find almost nothing for them. Condition labels don't vary by transport, so
+    matching on (model, dataset, condition, item_id) is transport-agnostic and correct regardless
+    of which transport actually collected a row (verified earlier: prompts are byte-identical
+    across transports for the same model/method).
     """
-    wanted = {c["sig"] for c in sweep.enumerate_cells(spec, method)}
+    wanted = {(c["model"], c["dataset"], sweep._cond_key(c["cond"].label, c.get("match_demos", False)),
+              c["item"]["id"])
+             for c in sweep.enumerate_cells(spec, method)}
     scores: Dict[Cell, Dict[str, bool]] = defaultdict(dict)
     with sweep.STORE_PATH.open() as f:
         for line in f:
             r = json.loads(line)
-            if r["sig"] in wanted and r.get("error") is None:
+            if r.get("error") is not None:
+                continue
+            key = (r["model"], r["dataset"], r["condition"], r["item_id"])
+            if key in wanted:
                 scores[(r["model"], r["dataset"], r["condition"])][r["item_id"]] = bool(r["correct"])
     return scores
 
