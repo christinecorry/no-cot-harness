@@ -101,7 +101,7 @@ def plot_one_dataset(dataset: str, peaks: Dict[Tuple[str, str], Panel], models: 
     ax.set_xticklabels(xticklabels)
     ax.set_ylabel("accuracy (%)")
     ax.set_ylim(0, 50 if dataset.startswith("nhop") else 100)
-    ax.set_title(f"Baseline vs peak — {dataset}")
+    ax.set_title(f"Baseline vs peak — {config.short_dataset(dataset)}")
     fig.text(0.5, 0.01,
              "Peak = highest-scoring repeat/filler condition per model. Label = condition, "
              "then '*' (Holm-corrected paired t-test p<0.05 vs baseline) or 'ns'.",

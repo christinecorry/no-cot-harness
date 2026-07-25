@@ -35,6 +35,26 @@ def short_model(model: str) -> str:
     return model.split("/")[-1].replace("claude-", "")
 
 
+# Display names for figures/tables: drop the item-count suffix some dataset ids carry
+# (e.g. '_500' on the subset used for full-scale runs) since n is already shown separately
+# wherever these appear, and title-case the rest for readability.
+_DATASET_DISPLAY = {
+    "gen_arithmetic": "Gen-Arithmetic",
+    "gen_arithmetic_500": "Gen-Arithmetic",
+    "gen_arithmetic_1000": "Gen-Arithmetic",
+    "comp_math": "Comp-Math",
+    "comp_math_500": "Comp-Math",
+    "nhop_2": "2-Hop",
+    "nhop_3": "3-Hop",
+    "nhop_4": "4-Hop",
+}
+
+
+def short_dataset(dataset: str) -> str:
+    """A compact display label for a dataset id, e.g. 'gen_arithmetic_500' -> 'Gen-Arithmetic'."""
+    return _DATASET_DISPLAY.get(dataset, dataset)
+
+
 def conditions_for(axes: dict):
     """Distinct conditions implied a dataset's repeat/filler axes (baseline counted once)."""
     from . import conditions as C
