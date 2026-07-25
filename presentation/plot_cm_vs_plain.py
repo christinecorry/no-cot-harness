@@ -105,7 +105,7 @@ def plot_one_dataset(dataset: str, axes_spec: dict, cm_counts: dict, plain_count
         ax.set_xticklabels([str(v) for v in values])
         ax.set_xlabel(xlabel)
         ax.set_ylabel("accuracy (%)")
-        ax.set_title(f"{title} — {dataset}")
+        ax.set_title(f"{title} — {config.short_dataset(dataset)}")
         ax.set_ylim(0, 100)
         if ax.get_legend_handles_labels()[0]:
             ax.legend(ncol=1, fontsize=8)

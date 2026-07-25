@@ -76,7 +76,7 @@ def plot_one_dataset(dataset: str, plain_path: Path, matched_path: Path, out_pat
         ax.set_xticklabels([str(v) for v in values])
         ax.set_xlabel(xlabel)
         ax.set_ylabel("accuracy (%)")
-        ax.set_title(f"{title} — {dataset}")
+        ax.set_title(f"{title} — {config.short_dataset(dataset)}")
         ax.set_ylim(0, 100)
         ax.legend(ncol=1, fontsize=7)
 

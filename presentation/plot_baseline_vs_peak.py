@@ -59,6 +59,10 @@ def plot_one_dataset(dataset: str, peaks: Dict[Tuple[str, str], Panel], models: 
     group_gap = 1.0
     x0 = 0.0
     xticks, xticklabels = [], []
+    y_max = 50 if dataset.startswith("nhop") else 100
+    # A bar too short (e.g. 4-hop's few-percent accuracies) can't fit the condition label
+    # inside it — below this height, the label prints just above the bar instead.
+    short_bar_cutoff = 0.12 * y_max
 
     for mi, model in enumerate(models):
         baseline_acc, peak_repeat, peak_filler = peaks.get((model, dataset), (None, None, None))
@@ -79,13 +83,21 @@ def plot_one_dataset(dataset: str, peaks: Dict[Tuple[str, str], Panel], models: 
                    alpha=1.0 if bi == 0 else 0.75, edgecolor="#111111", linewidth=0.6)
             # The accuracy value + significance marker sit at the bar top; the condition label
             # (peak bars only) is printed vertically at the bar's base, inside the bar, so it
-            # never competes for space with the value/marker above.
+            # never competes for space with the value/marker above — UNLESS the bar is too
+            # short to hold it (e.g. 4-hop's few-percent accuracies), in which case it prints
+            # just above the value/marker instead, stacked, rather than spilling out of a bar
+            # too short to contain it.
             sig_marker = f" {'*' if row['sig_holm'] else 'ns'}" if row is not None else ""
             ax.text(xpos, val + 1.0, f"{val:.1f}%{sig_marker}", ha="center", va="bottom",
                    fontsize=7.5, fontweight="bold")
             if row is not None:
-                ax.text(xpos, 1.0, _cond_short_label(row["condition"]), ha="center", va="bottom",
-                       fontsize=7, color="white", rotation=90)
+                cond_txt = _cond_short_label(row["condition"])
+                if val >= short_bar_cutoff:
+                    ax.text(xpos, 1.0, cond_txt, ha="center", va="bottom", fontsize=7,
+                           color="white", rotation=90)
+                else:
+                    ax.text(xpos, val + y_max * 0.055, cond_txt, ha="center", va="bottom",
+                           fontsize=7, color="#333333", rotation=90)
         group_center = x0 + width
         xticks.append(group_center)
         xticklabels.append(config.short_model(model))
@@ -100,7 +112,7 @@ def plot_one_dataset(dataset: str, peaks: Dict[Tuple[str, str], Panel], models: 
     ax.set_xticks(xticks)
     ax.set_xticklabels(xticklabels)
     ax.set_ylabel("accuracy (%)")
-    ax.set_ylim(0, 50 if dataset.startswith("nhop") else 100)
+    ax.set_ylim(0, y_max)
     ax.set_title(f"Baseline vs peak — {config.short_dataset(dataset)}")
     fig.text(0.5, 0.01,
              "Peak = highest-scoring repeat/filler condition per model. Label = condition, "
