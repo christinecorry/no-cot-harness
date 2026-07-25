@@ -99,14 +99,20 @@ def describe_coverage(counts: dict, models: List[str], dataset: str, min_n: int)
     return "\n".join(lines)
 
 
+# The house style's color cycle has two dark-red/maroon entries close together (index 0 "5e0000"
+# and index 3 "9a0000") that read as near-identical on a line plot — picked explicitly instead of
+# cycling raw C0..C3 so up to 6 model lines on one figure stay visually distinct.
+_LINE_COLORS = ["5e0000", "d45d00", "1a1a1a", "c9a227", "666666", "800000"]
+
+
 def plot_one_dataset(dataset: str, axes_spec: dict, counts: dict, min_n: int, models: List[str],
-                      out_path: Path, run_name: str, target_n: int) -> Path:
+                      out_path: Path, target_n: int) -> Path:
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.2))
     for ax, (axis_key, title, xlabel) in zip(axes, PANELS):
         values = axes_spec.get(axis_key, [])
         xs = list(range(len(values)))
         for i, m in enumerate(models):
-            color = f"C{i}"
+            color = f"#{_LINE_COLORS[i % len(_LINE_COLORS)]}"
             ys, lo_err, hi_err = [], [], []
             for v in values:
                 key = (m, dataset, cond_label(axis_key, v) + "+md")
@@ -130,7 +136,7 @@ def plot_one_dataset(dataset: str, axes_spec: dict, counts: dict, min_n: int, mo
         ax.set_xticklabels([str(v) for v in values])
         ax.set_xlabel(xlabel)
         ax.set_ylabel("accuracy (%)")
-        ax.set_title(f"{title} — {dataset}")
+        ax.set_title(f"{title} — {dataset} (n={target_n})")
         # Multi-hop accuracy stays low everywhere (nhop_3/nhop_4 top out well under 20%) — a
         # 0-100 scale flattens the real differences between conditions/models into noise-looking
         # wiggles near the axis floor, so nhop datasets get a tighter 0-50 range instead.
@@ -138,12 +144,7 @@ def plot_one_dataset(dataset: str, axes_spec: dict, counts: dict, min_n: int, mo
         if ax.get_legend_handles_labels()[0]:
             ax.legend(ncol=1, fontsize=8)
 
-    caption = (f"{run_name} (this dataset's target n={target_n}/condition). Points require "
-               f"n>={min_n} landed items; error bars are 95% Wilson score intervals on "
-               f"(correct, n); gaps mean not enough data has landed yet. Mid-run snapshot, not "
-               f"final.")
-    fig.text(0.5, 0.005, caption, ha="center", fontsize=8.5, fontweight="semibold", color="#111111")
-    fig.tight_layout(rect=(0, 0.045, 1, 1))
+    fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path)
     plt.close(fig)
@@ -194,7 +195,7 @@ def main(argv: List[str] | None = None) -> int:
         target_n = min(len(schema.load_jsonl(registry.DATASETS[dataset].eval_path)),
                        config.NAMED_RUNS[args.run]["n"])
         out = out_dir / f"{args.run}_lines_{dataset}.png"
-        plot_one_dataset(dataset, axes_spec, counts, args.min_n, models, out, args.run, target_n)
+        plot_one_dataset(dataset, axes_spec, counts, args.min_n, models, out, target_n)
         print(f"wrote {out}")
         print(describe_coverage(counts, models, dataset, args.min_n))
     return 0
