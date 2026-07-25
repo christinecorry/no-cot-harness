@@ -77,14 +77,15 @@ def plot_one_dataset(dataset: str, peaks: Dict[Tuple[str, str], Panel], models: 
             centers.append(xpos)
             ax.bar(xpos, val, width=width * 0.92, color=color,
                    alpha=1.0 if bi == 0 else 0.75, edgecolor="#111111", linewidth=0.6)
-            # The accuracy value sits right at the bar top; the condition + significance marker
-            # (peak bars only) stacks above that, so the two never overlap.
-            ax.text(xpos, val + 1.0, f"{val:.1f}%", ha="center", va="bottom", fontsize=7.5,
-                   fontweight="bold")
+            # The accuracy value + significance marker sit at the bar top; the condition label
+            # (peak bars only) is printed vertically at the bar's base, inside the bar, so it
+            # never competes for space with the value/marker above.
+            sig_marker = f" {'*' if row['sig_holm'] else 'ns'}" if row is not None else ""
+            ax.text(xpos, val + 1.0, f"{val:.1f}%{sig_marker}", ha="center", va="bottom",
+                   fontsize=7.5, fontweight="bold")
             if row is not None:
-                cond_label = f"{_cond_short_label(row['condition'])}  {'*' if row['sig_holm'] else 'ns'}"
-                ax.text(xpos, val + 5.5, cond_label, ha="center", va="bottom", fontsize=7,
-                       color="#333333")
+                ax.text(xpos, 1.0, _cond_short_label(row["condition"]), ha="center", va="bottom",
+                       fontsize=7, color="white", rotation=90)
         group_center = x0 + width
         xticks.append(group_center)
         xticklabels.append(config.short_model(model))
