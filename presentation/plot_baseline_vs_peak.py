@@ -24,10 +24,13 @@ DEFAULT_RUN_NAME = "condition_matched_500"
 Panel = Tuple[Optional[float], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]  # baseline, peak_repeat_row, peak_filler_row
 
 
-def compute_peaks(spec: Dict[str, Any]) -> Dict[Tuple[str, str], Panel]:
+def compute_peaks(spec: Dict[str, Any], alpha: float = 0.001) -> Dict[Tuple[str, str], Panel]:
     """(model, dataset) -> (baseline_acc, peak_repeat_row, peak_filler_row). A row is None if
-    that dataset's axes don't include that condition kind (e.g. no repeats swept)."""
-    rows = hstats.paired_ttests(spec, None)
+    that dataset's axes don't include that condition kind (e.g. no repeats swept).
+
+    `alpha` (default 0.001, matching the source LessWrong post's own reporting convention,
+    stricter than the usual 0.05) is the Holm-corrected significance cutoff for the '*' marker."""
+    rows = hstats.paired_ttests(spec, None, alpha=alpha)
     by_panel: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
     for r in rows:
         by_panel[(r["model"], r["dataset"])].append(r)
@@ -43,6 +46,16 @@ def compute_peaks(spec: Dict[str, Any]) -> Dict[Tuple[str, str], Panel]:
     return result
 
 
+def _readable_text_color(hex_color: str, alpha: float) -> str:
+    """White or near-black, whichever reads against `hex_color` rendered at `alpha` over the
+    figure's white background — a fixed white broke down on lighter bars (e.g. opus-4.5's
+    light-red peak bars), where it was nearly invisible."""
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+    r, g, b = (alpha * c + (1 - alpha) * 255 for c in (r, g, b))
+    luminance = 0.299 * r + 0.587 * g + 0.114 * b
+    return "white" if luminance < 150 else "#222222"
+
+
 def _cond_short_label(cond: str) -> str:
     """'repeat_r10+md' -> 'r=10'; 'filler_f300+md' -> 'f=300'."""
     base = cond.split("+")[0]
@@ -52,16 +65,17 @@ def _cond_short_label(cond: str) -> str:
 
 
 def plot_one_dataset(dataset: str, peaks: Dict[Tuple[str, str], Panel], models: List[str],
-                     out_path: Path) -> Path:
+                     out_path: Path, alpha: float = 0.001) -> Path:
     fig, ax = plt.subplots(figsize=(max(7, 2.2 * len(models)), 5.5))
     width = 0.25
     group_gap = 1.0
     x0 = 0.0
     xticks, xticklabels = [], []
     y_max = 50 if dataset.startswith("nhop") else 100
-    # A bar too short (e.g. 4-hop's few-percent accuracies) can't fit the condition label
-    # inside it — below this height, the label prints just above the bar instead.
-    short_bar_cutoff = 0.12 * y_max
+    # A flat data-unit offset (e.g. "1.0") would sit at a different physical height on a 0-50
+    # axis than on a 0-100 one, since the same figure height maps to twice the pixels-per-unit —
+    # scale the gap by y_max so every dataset's labels sit the same visual distance from the bar.
+    label_gap = y_max * 0.01
     colors = config.model_colors(models)
 
     for model in models:
@@ -81,23 +95,16 @@ def plot_one_dataset(dataset: str, peaks: Dict[Tuple[str, str], Panel], models: 
             centers.append(xpos)
             ax.bar(xpos, val, width=width * 0.92, color=color,
                    alpha=1.0 if bi == 0 else 0.75, edgecolor="#111111", linewidth=0.6)
-            # The accuracy value + significance marker sit at the bar top; the condition label
-            # (peak bars only) is printed vertically at the bar's base, inside the bar, so it
-            # never competes for space with the value/marker above — UNLESS the bar is too
-            # short to hold it (e.g. 4-hop's few-percent accuracies), in which case it prints
-            # just above the value/marker instead, stacked, rather than spilling out of a bar
-            # too short to contain it.
-            sig_marker = f" {'*' if row['sig_holm'] else 'ns'}" if row is not None else ""
-            ax.text(xpos, val + 1.0, f"{val:.1f}%{sig_marker}", ha="center", va="bottom",
+            # The accuracy value + significance marker sit just above the bar top; the condition
+            # label (peak bars only) sits at the bar's base, in a color chosen to read against
+            # that bar's own color, regardless of the bar's height.
+            sig_marker = " *" if (row is not None and row["sig_holm"]) else ""
+            ax.text(xpos, val + label_gap, f"{val:.1f}%{sig_marker}", ha="center", va="bottom",
                    fontsize=7.5, fontweight="bold")
             if row is not None:
                 cond_txt = _cond_short_label(row["condition"])
-                if val >= short_bar_cutoff:
-                    ax.text(xpos, 1.0, cond_txt, ha="center", va="bottom", fontsize=7,
-                           color="white", rotation=90)
-                else:
-                    ax.text(xpos, val + y_max * 0.055, cond_txt, ha="center", va="bottom",
-                           fontsize=7, color="#333333", rotation=90)
+                ax.text(xpos, label_gap, cond_txt, ha="center", va="bottom", fontsize=6.5,
+                       color=_readable_text_color(colors[model], 0.75))
         group_center = x0 + width
         xticks.append(group_center)
         xticklabels.append(config.short_model(model))
@@ -115,8 +122,9 @@ def plot_one_dataset(dataset: str, peaks: Dict[Tuple[str, str], Panel], models: 
     ax.set_ylim(0, y_max)
     ax.set_title(f"Baseline vs peak — {config.short_dataset(dataset)}")
     fig.text(0.5, 0.01,
-             "Peak = highest-scoring repeat/filler condition per model. Label = condition, "
-             "then '*' (Holm-corrected paired t-test p<0.05 vs baseline) or 'ns'.",
+             "Peak = highest-scoring repeat/filler condition per model (labeled at each bar's "
+             f"base). '*' = significant vs baseline (Holm-corrected paired t-test, p<{alpha}); "
+             "unmarked = not significant.",
              ha="center", fontsize=8, color="#333333")
     fig.tight_layout(rect=(0, 0.05, 1, 1))
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,6 +140,9 @@ def main(argv: List[str] | None = None) -> int:
     ap.add_argument("--models", help="comma-separated model ids; default: the chosen --run's own list")
     ap.add_argument("--dataset", action="append", help="dataset id (repeatable); default: all in --run")
     ap.add_argument("--out-dir", default=str(config.FIGURES_DIR))
+    ap.add_argument("--alpha", type=float, default=0.001,
+                    help="Holm-corrected significance cutoff for the '*' marker (default 0.001, "
+                         "matching the source LessWrong post's own reporting convention)")
     args = ap.parse_args(argv)
 
     apply_style()
@@ -141,12 +152,12 @@ def main(argv: List[str] | None = None) -> int:
     models = spec["models"]
     datasets = args.dataset or list(spec["axes"].keys())
 
-    peaks = compute_peaks(spec)
+    peaks = compute_peaks(spec, alpha=args.alpha)
 
     out_dir = Path(args.out_dir)
     for dataset in datasets:
         out = out_dir / f"{args.run}_baseline_vs_peak_{dataset}.png"
-        plot_one_dataset(dataset, peaks, models, out)
+        plot_one_dataset(dataset, peaks, models, out, alpha=args.alpha)
         print(f"wrote {out}")
         for model in models:
             baseline_acc, peak_repeat, peak_filler = peaks.get((model, dataset), (None, None, None))

@@ -133,11 +133,13 @@ def _holm(pvals: List[float]) -> List[float]:
     return adj
 
 
-def paired_ttests(spec: Dict[str, Any], method: str) -> List[Dict[str, Any]]:
+def paired_ttests(spec: Dict[str, Any], method: str, alpha: float = 0.05) -> List[Dict[str, Any]]:
     """Paired t-test of each condition vs its baseline, with Holm correction within each panel.
 
     The family for the Holm adjustment is the set of (condition vs baseline) tests within one
     (model, dataset) panel — i.e. all the r/f points compared to the single baseline of that panel.
+    `alpha` is the Holm-corrected significance cutoff (default 0.05); pass a stricter value (e.g.
+    0.001, matching the source paper's own reporting convention) for a more conservative marker.
     """
     scores = load_item_scores(spec, method)
     by_panel: Dict[Tuple[str, str, str], List[str]] = defaultdict(list)
@@ -163,7 +165,7 @@ def paired_ttests(spec: Dict[str, Any], method: str) -> List[Dict[str, Any]]:
             })
         for row, p_holm in zip(panel, _holm([r["p"] for r in panel])):
             row["p_holm"] = p_holm
-            row["sig_holm"] = p_holm < 0.05
+            row["sig_holm"] = p_holm < alpha
         rows.extend(panel)
     return rows
 

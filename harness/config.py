@@ -66,13 +66,26 @@ _PROVIDER_PALETTES: Dict[str, List[str]] = {
 }
 _OTHER_PALETTE = ["666666", "1a1a1a", "c9a227"]
 
+# Fixed per-model shade, so a model's color stays the same regardless of what order `models`
+# lists it in (unlike cycling a provider's palette positionally). Any model not listed here
+# falls back to that positional cycling.
+_MODEL_COLOR_OVERRIDES: Dict[str, str] = {
+    "anthropic/claude-opus-5": "4a1010",     # dark maroon
+    "anthropic/claude-fable-5": "c1440e",    # burnt orange
+    "anthropic/claude-opus-4.5": "e8998d",   # light red
+}
+
 
 def model_colors(models: List[str]) -> Dict[str, str]:
-    """model id -> hex color (no '#'), grouped by provider family (see above). Within a
-    provider, models get distinct shades in the order they appear in `models`."""
+    """model id -> hex color (no '#'), grouped by provider family (see above). Known models get
+    a fixed shade (`_MODEL_COLOR_OVERRIDES`); any other model in the same provider gets the next
+    unused shade in that provider's palette, in the order it appears in `models`."""
     counters: Dict[str, int] = defaultdict(int)
     colors: Dict[str, str] = {}
     for m in models:
+        if m in _MODEL_COLOR_OVERRIDES:
+            colors[m] = _MODEL_COLOR_OVERRIDES[m]
+            continue
         provider = m.split("/")[0] if "/" in m else ""
         palette = _PROVIDER_PALETTES.get(provider, _OTHER_PALETTE)
         colors[m] = palette[counters[provider] % len(palette)]
