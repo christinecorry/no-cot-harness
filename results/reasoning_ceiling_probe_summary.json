@@ -1,0 +1,206 @@
+{
+  "seed": 42,
+  "n_per_dataset": 20,
+  "results": [
+    {
+      "model": "anthropic/claude-opus-4.5",
+      "dataset": "gen_arithmetic_500",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 20,
+      "acc": 1.0,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "openai/gpt-5.6-sol",
+      "dataset": "gen_arithmetic_500",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 20,
+      "acc": 1.0,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "anthropic/claude-fable-5",
+      "dataset": "gen_arithmetic_500",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 20,
+      "acc": 1.0,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "anthropic/claude-opus-5",
+      "dataset": "gen_arithmetic_500",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 20,
+      "acc": 1.0,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "anthropic/claude-opus-4.5",
+      "dataset": "comp_math_500",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 17,
+      "acc": 0.85,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "openai/gpt-5.6-sol",
+      "dataset": "comp_math_500",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 19,
+      "acc": 0.95,
+      "fallback_count": 1,
+      "errors": 0
+    },
+    {
+      "model": "anthropic/claude-fable-5",
+      "dataset": "comp_math_500",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 18,
+      "acc": 0.9,
+      "fallback_count": 2,
+      "errors": 0
+    },
+    {
+      "model": "anthropic/claude-opus-5",
+      "dataset": "comp_math_500",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 19,
+      "acc": 0.95,
+      "fallback_count": 1,
+      "errors": 0
+    },
+    {
+      "model": "anthropic/claude-opus-4.5",
+      "dataset": "nhop_2",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 19,
+      "acc": 0.95,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "openai/gpt-5.6-sol",
+      "dataset": "nhop_2",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 19,
+      "acc": 0.95,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "anthropic/claude-fable-5",
+      "dataset": "nhop_2",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 20,
+      "acc": 1.0,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "anthropic/claude-opus-5",
+      "dataset": "nhop_2",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 19,
+      "acc": 0.95,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "anthropic/claude-opus-4.5",
+      "dataset": "nhop_3",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 19,
+      "acc": 0.95,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "openai/gpt-5.6-sol",
+      "dataset": "nhop_3",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 19,
+      "acc": 0.95,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "anthropic/claude-fable-5",
+      "dataset": "nhop_3",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 19,
+      "acc": 0.95,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "anthropic/claude-opus-5",
+      "dataset": "nhop_3",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 19,
+      "acc": 0.95,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "anthropic/claude-opus-4.5",
+      "dataset": "nhop_4",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 19,
+      "acc": 0.95,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "openai/gpt-5.6-sol",
+      "dataset": "nhop_4",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 19,
+      "acc": 0.95,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "anthropic/claude-fable-5",
+      "dataset": "nhop_4",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 19,
+      "acc": 0.95,
+      "fallback_count": 0,
+      "errors": 0
+    },
+    {
+      "model": "anthropic/claude-opus-5",
+      "dataset": "nhop_4",
+      "n": 20,
+      "n_scored": 20,
+      "correct": 18,
+      "acc": 0.9,
+      "fallback_count": 0,
+      "errors": 0
+    }
+  ]
+}
