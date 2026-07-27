@@ -9,8 +9,10 @@ defeat the no-CoT measurement, so every scorer here reads the first line only.
   - IntegerScorer     the math rule (Gen-Arithmetic / competition math): the integer after
                       "Answer:" (or leading the response), exact-match against an integer gold.
   - StringIntScorer   the n-hop fact-composition rule: mixed string/int golds; integer golds match
-                      the integer anchored right after "Answer:", string golds match normalized-
-                      exactly (no fuzzy/alias matching).
+                      the integer anchored right after "Answer:", string golds match after the
+                      normalization pass in `_norm_string` (accents, punctuation, a small set of
+                      known name/place aliases, and a guarded middle-word removal for person
+                      names — see that function's docstring).
 
 This module also owns the ONE definition of the no-CoT violation rule (`nocot_violation`) and the
 record re-scoring recipe (`rescore_record`) shared by the sweep driver and the replay regression
@@ -19,6 +21,7 @@ gate — a rule change lands everywhere at once or nowhere.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any, Optional
 
 # --- Unicode normalization (applied ahead of every parser) ----------------------------------------
@@ -178,10 +181,138 @@ def _leading_int(text: str) -> Optional[int]:
     return int(m.group(1).replace(",", ""))
 
 
-def _norm(s: str) -> str:
-    """Normalize a string answer for comparison: Unicode variants -> ASCII (both sides pass
-    through, so the comparison stays symmetric), casefold, collapse whitespace, trim edges."""
-    return re.sub(r"\s+", " ", _normalize_unicode(str(s)).strip(_TRIM)).casefold()
+# --- string-answer normalization (n-hop fact-composition golds) -----------------------------------
+# Exact-match-after-normalization: no fuzzy or substring matching, just enough normalization that
+# a formatting or naming-convention difference (an accent, an inserted middle name, an Oxford
+# comma, a common alternate name) doesn't register as a wrong answer. Applied symmetrically to
+# both the parsed answer and gold.
+#
+# The reference data below (person-name aliases, state mottos/flowers) is plain factual reference
+# data, not code, drawn from the same fact domain the n-hop generator itself uses (that generator's
+# fact tables are vendored verbatim under harness/data_curation/vendor/multi_hop/inputs/) —
+# hardcoded here as plain strings since this module has no reason to import the generator.
+_SUFFIXES = {"jr", "sr", "i", "ii", "iii", "iv", "v"}
+
+# Historical figures whose commonly-used name isn't simply first+last: the generic middle-word
+# rule below would otherwise pick the wrong two words (e.g. "John Boyd Orr" -> "John Orr" instead
+# of the actually-used "Boyd Orr").
+_NAME_ALIASES = {
+    "robert bruce merrifield": "bruce merrifield",
+    "oscar arias sanchez": "oscar arias",
+    "john boyd orr": "boyd orr",
+    "hermann emil fischer": "emil fischer",
+    "petrus debye": "peter debye",
+    "adolf otto reinhold windaus": "adolf windaus",
+    "william randal cremer": "randal cremer",
+    "rigoberta menchu tum": "rigoberta menchu",
+}
+# US state mottos/flowers (all 50 states + DC) — non-name multi-word phrases that the middle-word
+# remover below must NOT touch (it would mangle e.g. Colorado's 3-word Latin motto "Nil Sine
+# Numine" by treating it as a person's name and dropping the middle word).
+_STATE_MOTTOS = [
+    "We Dare Defend Our Rights", "North to the Future", "Ditat Deus", "Regnat Populus", "Eureka",
+    "Nil Sine Numine", "Qui Transtulit Sustinet", "Liberty and Independence", "In God We Trust",
+    "Wisdom, Justice, and Moderation", "Ua Mau ke Ea o ka Aina i ka Pono", "Esto Perpetua",
+    "State Sovereignty, National Union", "The Crossroads of America",
+    "Our Liberties We Prize and Our Rights We Will Maintain", "Ad Astra per Aspera",
+    "United We Stand, Divided We Fall", "Union, Justice, and Confidence", "Dirigo",
+    "Fatti Maschii, Parole Femine", "Ense Petit Placidam Sub Libertate Quietem",
+    "Si Quaeris Peninsulam Amoenam Circumspice", "L'Étoile du Nord", "Virtute et Armis",
+    "Salus Populi Suprema Lex Esto", "Oro y Plata", "Equality Before the Law",
+    "All for Our Country", "Live Free or Die", "Liberty and Prosperity", "Crescit Eundo",
+    "Excelsior", "Esse Quam Videri", "Liberty and Union Now and Forever, One and Inseparable",
+    "With God All Things Are Possible", "Labor Omnia Vincit", "Alis Volat Propriis",
+    "Virtue, Liberty, and Independence", "Hope", "Dum Spiro Spero",
+    "Under God the People Rule", "Agriculture and Commerce", "Friendship", "Industry",
+    "Freedom and Unity", "Sic Semper Tyrannis", "Al-ki", "Montani Semper Liberi", "Forward",
+    "Equal Rights", "Justitia Omnibus",
+]
+_STATE_FLOWERS = [
+    "Camellia", "Forget-me-not", "Saguaro Cactus Blossom", "Apple Blossom", "California Poppy",
+    "Rocky Mountain Columbine", "Mountain Laurel", "Peach Blossom", "Orange Blossom",
+    "Cherokee Rose", "Hawaiian Hibiscus", "Syringa", "Violet", "Peony", "Wild Rose", "Sunflower",
+    "Goldenrod", "Magnolia", "White Pine Cone and Tassel", "Black-Eyed Susan", "Mayflower",
+    "Pink and White Lady's Slipper", "White Hawthorn Blossom", "Bitterroot", "Sagebrush",
+    "Purple Lilac", "Common Meadow Violet", "Yucca Flower", "Rose", "Dogwood",
+    "Wild Prairie Rose", "Scarlet Carnation", "Oklahoma Rose", "Oregon Grape",
+    "Yellow Jessamine", "Pasque Flower", "Iris", "Bluebonnet", "Sego Lily", "Red Clover",
+    "American Dogwood", "Coast Rhododendron", "Rhododendron", "Wood Violet",
+    "Indian Paintbrush", "American Beauty Rose",
+]
+_FLOWER_ALIASES = {
+    "hawaiian hibiscus": "hibiscus",
+    "white hawthorn blossom": "hawthorn",
+    "common meadow violet": "violet",
+    "yucca flower": "yucca",
+}
+_DIRECTIONAL_PREFIXES = ("northern ", "western ", "eastern ", "southern ", "american ")
+_HONORIFIC_PREFIXES = ("mr. ", "sir. ", "mr ", "sir ", "lord ")
+
+
+def _strip_accents(s: str) -> str:
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
+
+
+def _remove_middle_word(s: str) -> str:
+    """First + last word for a 3-4 word all-alphabetic phrase (a middle name/initial), preserving
+    a trailing suffix (Jr/Sr/I-V). A 4-word phrase WITHOUT a suffix is left unchanged (only a
+    single inserted word is stripped, never two)."""
+    words = s.split()
+    if not (3 <= len(words) <= 4):
+        return s
+    if not all(w.isalpha() for w in words):
+        return s
+    if words[-1] in _SUFFIXES:
+        return f"{words[0]} {words[-2]} {words[-1]}" if len(words) == 4 else s
+    if len(words) == 4:
+        return s
+    return f"{words[0]} {words[2]}"
+
+
+def _base_normalize_string(s: str) -> str:
+    """Every normalization step except the final middle-word removal — factored out so
+    `_NON_NAME_SET` (built below) can be compared against pre-middle-word-removal strings."""
+    s = _strip_accents(_normalize_unicode(s).strip()).casefold()
+    for prefix in _HONORIFIC_PREFIXES:
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+    s = re.sub(r"\s*\([^)]*\)", "", s)  # parenthetical explanation, e.g. "X (also known as Y)"
+    for alias, canon in _NAME_ALIASES.items():
+        s = s.replace(alias, canon)
+    # Washington DC and Alabama's motto each have two equally-valid forms in general use (place
+    # name vs "District of Columbia"; English translation vs the original Latin) — canonicalize
+    # both directions so either form matches the other.
+    s = s.replace("washington, d.c.", "district of columbia")
+    s = s.replace("d.c.", "district of columbia")
+    if s == "washington":
+        s = "district of columbia"
+    s = s.replace("audemus jura nostra defendere", "we dare defend our rights")
+    for ch in ",.-'`":
+        s = s.replace(ch, "")
+    s = re.sub(r"\band\b", "", s)  # drop the word "and" -> Oxford-comma-insensitive
+    s = re.sub(r"\s+", " ", s).strip()
+    if s.startswith("the "):
+        s = s[4:]
+    for prefix in _DIRECTIONAL_PREFIXES:
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+    for alias, canon in _FLOWER_ALIASES.items():
+        s = s.replace(alias, canon)
+    return s.strip()
+
+
+_NON_NAME_SET = {_base_normalize_string(x) for x in _STATE_MOTTOS + _STATE_FLOWERS}
+
+
+def _norm_string(s: str) -> str:
+    """Normalize a string answer for comparison — Unicode/accent folding, casefold, punctuation
+    and Oxford-comma insensitivity, a small set of historical-figure aliases, and a narrowly
+    scoped middle-word remover for person names — guarded against state mottos/flowers, which
+    are non-name multi-word phrases the middle-word rule must not touch."""
+    base = _base_normalize_string(s)
+    if base in _NON_NAME_SET:
+        return base
+    return _remove_middle_word(base)
 
 
 class StringIntScorer:
@@ -211,7 +342,7 @@ class StringIntScorer:
         gi = _as_int(gold)
         if gi is not None:                      # numeric answer: integer at the start of the answer text
             return _leading_int(parsed) == gi
-        return _norm(parsed) == _norm(gold)     # string answer: normalized exact match
+        return _norm_string(parsed) == _norm_string(gold)  # string answer: normalized exact match
 
     @staticmethod
     def answer_form(text: str) -> str:
