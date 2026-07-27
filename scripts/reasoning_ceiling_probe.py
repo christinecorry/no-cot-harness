@@ -91,14 +91,70 @@ def call_model(client: Any, model: str, problem: str, max_tokens: int) -> Dict[s
 
 _INT_WORD_BOUNDARY = r"(?<!\d){}(?!\d)"
 
+# String-answer normalization, reimplemented from scratch after reading (not copying) the
+# n-hop paper's own eval_multi_hop.py `normalize_answer`/`check_answer` (one-off read exception,
+# approved 2026-07-27 — see PROGRESS.md; only the two generator files are vendored/copied, this
+# scoring logic is NOT). Their real, ACTIVE scoring is exact-match-after-normalization — a
+# generic substring/subsequence check appears in their file but is commented out and unused —
+# so this mirrors their normalization rules rather than a looser fuzzy match: strip a
+# parenthetical explanation, strip comma/period/hyphen/apostrophe punctuation, drop the
+# standalone word "and" (this alone makes an Oxford-comma difference disappear), and strip a
+# leading "the ".
+_SUFFIXES = {"jr", "sr", "i", "ii", "iii", "iv", "v"}
+
+
+def _remove_middle_word(s: str) -> str:
+    """First + last word for a 3-4 word all-alphabetic phrase (a middle name/initial), preserving
+    a trailing suffix (Jr/Sr/I-V) — same narrow scope as the original's `remove_middle_names`:
+    a 4-word phrase WITHOUT a suffix is left unchanged (their function only strips a single
+    inserted word, not two)."""
+    words = s.split()
+    if not (3 <= len(words) <= 4):
+        return s
+    if not all(w.isalpha() for w in words):
+        return s
+    if words[-1] in _SUFFIXES:
+        return f"{words[0]} {words[-2]} {words[-1]}" if len(words) == 4 else s
+    if len(words) == 4:
+        return s
+    return f"{words[0]} {words[2]}"
+
+
+def _normalize_string(s: str) -> str:
+    s = s.strip().lower()
+    s = re.sub(r"\s*\([^)]*\)", "", s)  # parenthetical explanation, e.g. "X (also known as Y)"
+    for ch in ",.-'`":
+        s = s.replace(ch, "")
+    s = re.sub(r"\band\b", "", s)  # drop the word "and" -> Oxford-comma-insensitive
+    s = re.sub(r"\s+", " ", s).strip()
+    if s.startswith("the "):
+        s = s[4:]
+    return s
+
+
+def _bounded_gap_pattern(words: List[str]) -> str:
+    """Regex requiring `words` in order, allowing at most ONE extra token between each pair —
+    a single inserted middle name/word, matching `_remove_middle_word`'s own narrow scope,
+    applied here as a bounded search within a response segment (rather than an unbounded
+    subsequence match, which could match unrelated text) since our segment isn't a single
+    already-isolated answer the way the original's `predicted` string is."""
+    escaped = [re.escape(w) for w in words]
+    gap = r"(?:\s+\S+)?\s+"
+    return r"\b" + escaped[0] + r"\b" + "".join(f"{gap}\\b{w}\\b" for w in escaped[1:])
+
 
 def _substring_match(segment: str, gold_answer: Any, answer_schema: str) -> bool:
     if answer_schema == "integer" or isinstance(gold_answer, int):
         pattern = _INT_WORD_BOUNDARY.format(re.escape(str(gold_answer)))
         return re.search(pattern, segment) is not None
-    gold_norm = re.sub(r"\s+", " ", str(gold_answer).strip().lower())
-    text_norm = re.sub(r"\s+", " ", segment.strip().lower())
-    return gold_norm in text_norm
+    gold_norm = _remove_middle_word(_normalize_string(str(gold_answer)))
+    text_norm = _normalize_string(segment)
+    if gold_norm in text_norm:
+        return True
+    gold_words = gold_norm.split()
+    if len(gold_words) >= 2:
+        return re.search(_bounded_gap_pattern(gold_words), text_norm) is not None
+    return False
 
 
 def matches_gold(response_text: str, gold_answer: Any, answer_schema: str) -> tuple[bool, str]:
