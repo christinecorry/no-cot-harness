@@ -205,6 +205,19 @@ _NAME_ALIASES = {
     "adolf otto reinhold windaus": "adolf windaus",
     "william randal cremer": "randal cremer",
     "rigoberta menchu tum": "rigoberta menchu",
+    "sharlene wells hawkes": "sharlene wells",
+}
+# First-name nicknames, applied as a word-boundary substitution rather than a fixed-phrase alias
+# above: a fixed "judith ford" -> "judi ford" entry would have diverted GOLD away from "judith
+# ford" while a longer parsed form like "Judith Anne Ford" still reduces to "judith ford" via the
+# middle-word rule below, breaking a match that already worked. Substituting the nickname itself
+# lets every form (Judi Ford / Judith Ford / Judith Anne Ford) converge on the same string.
+_NICKNAME_RE = re.compile(r"\bjudi\b")
+# American/British spelling variants for chemical elements. Gold values in this dataset are
+# always the American spelling; these map an alternate spelling down to it.
+_ELEMENT_ALIASES = {
+    "aluminium": "aluminum",
+    "caesium": "cesium",
 }
 # US state mottos/flowers (all 50 states + DC) — non-name multi-word phrases that the middle-word
 # remover below must NOT touch (it would mangle e.g. Colorado's 3-word Latin motto "Nil Sine
@@ -244,6 +257,16 @@ _FLOWER_ALIASES = {
     "white hawthorn blossom": "hawthorn",
     "common meadow violet": "violet",
     "yucca flower": "yucca",
+    "wild native sunflower": "sunflower",
+    "wild sunflower": "sunflower",
+    "texas bluebonnet": "bluebonnet",
+    "scarlet carnation": "carnation",
+    "wyoming indian paintbrush": "indian paintbrush",
+    "delaware peach blossom": "peach blossom",
+    # NOT reduced to bare "rhododendron": that's a SEPARATE state's actual flower name in this
+    # same list (West Virginia), so collapsing "Coast Rhododendron" (Washington) down to it would
+    # make the two states' answers indistinguishable.
+    "washington rhododendron": "coast rhododendron",
 }
 _DIRECTIONAL_PREFIXES = ("northern ", "western ", "eastern ", "southern ", "american ")
 _HONORIFIC_PREFIXES = ("mr. ", "sir. ", "mr ", "sir ", "lord ")
@@ -277,7 +300,14 @@ def _base_normalize_string(s: str) -> str:
         if s.startswith(prefix):
             s = s[len(prefix):]
     s = re.sub(r"\s*\([^)]*\)", "", s)  # parenthetical explanation, e.g. "X (also known as Y)"
+    # A trailing " - <clause>" / " — <clause>" is an appended gloss ("<answer> - West Virginia"),
+    # not part of the answer itself. Requires whitespace on both sides of the dash so a
+    # hyphenated compound word ("Al-ki", "Forget-me-not") is never affected.
+    s = re.sub(r"\s+[-–—]\s+.*$", "", s)
+    s = _NICKNAME_RE.sub("judith", s)
     for alias, canon in _NAME_ALIASES.items():
+        s = s.replace(alias, canon)
+    for alias, canon in _ELEMENT_ALIASES.items():
         s = s.replace(alias, canon)
     # Washington DC and Alabama's motto each have two equally-valid forms in general use (place
     # name vs "District of Columbia"; English translation vs the original Latin) — canonicalize
