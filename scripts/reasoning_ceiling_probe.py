@@ -29,7 +29,6 @@ import re
 import sys
 import threading
 import time
-import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
@@ -39,6 +38,11 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from harness import config, registry, schema  # noqa: E402
 from harness.backends import OPENROUTER_BASE_URL, _ANTHROPIC_PROVIDER_PIN  # noqa: E402
+# String-answer normalization (accents, honorifics, name/element aliases, guarded middle-word
+# removal for person names, etc.) is shared with the core scorer rather than duplicated here —
+# see harness/scoring.py for the full rule set and rationale.
+from harness.scoring import _base_normalize_string as _base_normalize  # noqa: E402
+from harness.scoring import _norm_string as _normalize_string  # noqa: E402
 
 DATASETS = ["gen_arithmetic_500", "comp_math_500", "nhop_2", "nhop_3", "nhop_4"]
 MODELS = ["anthropic/claude-opus-4.5", "openai/gpt-5.6-sol", "anthropic/claude-fable-5",
@@ -91,146 +95,6 @@ def call_model(client: Any, model: str, problem: str, max_tokens: int) -> Dict[s
 
 
 _INT_WORD_BOUNDARY = r"(?<!\d){}(?!\d)"
-
-# String-answer normalization, reimplemented from scratch after reading (not copying) the
-# n-hop paper's own eval_multi_hop.py `normalize_answer`/`check_answer` (one-off read exception,
-# approved 2026-07-27 — see PROGRESS.md; only the two generator files are vendored/copied, this
-# scoring logic is NOT). Their real, ACTIVE scoring is exact-match-after-normalization — a
-# generic substring/subsequence check appears in their file but is commented out and unused —
-# so this mirrors their normalization rules rather than a looser fuzzy match.
-#
-# The reference data below (person-name aliases, state mottos/flowers) is plain factual reference
-# data, not code — the same category as our own vendored generator's fact tables, which this
-# project already commits (harness/data_curation/vendor/multi_hop/inputs/ in the sibling private
-# repo). Hardcoded here rather than imported since this public repo has no vendored copy of that
-# generator to import from.
-_SUFFIXES = {"jr", "sr", "i", "ii", "iii", "iv", "v"}
-
-# Historical figures where the generic first+last-word rule picks the WRONG two words — each is
-# conventionally known by a middle+last or other non-first+last form. Checked against our own
-# nhop eval files: 3 of these 8 actually appear as gold answers (Boyd Orr, Cremer, Debye); the
-# rest are included for full parity since they're the same Nobel-laureate fact domain.
-_NAME_ALIASES = {
-    "robert bruce merrifield": "bruce merrifield",
-    "oscar arias sanchez": "oscar arias",
-    "john boyd orr": "boyd orr",
-    "hermann emil fischer": "emil fischer",
-    "petrus debye": "peter debye",
-    "adolf otto reinhold windaus": "adolf windaus",
-    "william randal cremer": "randal cremer",
-    "rigoberta menchu tum": "rigoberta menchu",
-}
-# US state mottos/flowers (all 50 states + DC) — confirmed several appear as gold answers in our
-# nhop eval files (e.g. Pennsylvania's motto). These are non-name multi-word phrases that
-# `_remove_middle_word` must NOT touch (it would mangle e.g. Colorado's 3-word Latin motto by
-# treating it as a person's name and dropping the middle word) — mirrors the original's
-# `NORMALIZED_NON_NAME_SET` guard.
-_STATE_MOTTOS = [
-    "We Dare Defend Our Rights", "North to the Future", "Ditat Deus", "Regnat Populus", "Eureka",
-    "Nil Sine Numine", "Qui Transtulit Sustinet", "Liberty and Independence", "In God We Trust",
-    "Wisdom, Justice, and Moderation", "Ua Mau ke Ea o ka Aina i ka Pono", "Esto Perpetua",
-    "State Sovereignty, National Union", "The Crossroads of America",
-    "Our Liberties We Prize and Our Rights We Will Maintain", "Ad Astra per Aspera",
-    "United We Stand, Divided We Fall", "Union, Justice, and Confidence", "Dirigo",
-    "Fatti Maschii, Parole Femine", "Ense Petit Placidam Sub Libertate Quietem",
-    "Si Quaeris Peninsulam Amoenam Circumspice", "L'Étoile du Nord", "Virtute et Armis",
-    "Salus Populi Suprema Lex Esto", "Oro y Plata", "Equality Before the Law",
-    "All for Our Country", "Live Free or Die", "Liberty and Prosperity", "Crescit Eundo",
-    "Excelsior", "Esse Quam Videri", "Liberty and Union Now and Forever, One and Inseparable",
-    "With God All Things Are Possible", "Labor Omnia Vincit", "Alis Volat Propriis",
-    "Virtue, Liberty, and Independence", "Hope", "Dum Spiro Spero",
-    "Under God the People Rule", "Agriculture and Commerce", "Friendship", "Industry",
-    "Freedom and Unity", "Sic Semper Tyrannis", "Al-ki", "Montani Semper Liberi", "Forward",
-    "Equal Rights", "Justitia Omnibus",
-]
-_STATE_FLOWERS = [
-    "Camellia", "Forget-me-not", "Saguaro Cactus Blossom", "Apple Blossom", "California Poppy",
-    "Rocky Mountain Columbine", "Mountain Laurel", "Peach Blossom", "Orange Blossom",
-    "Cherokee Rose", "Hawaiian Hibiscus", "Syringa", "Violet", "Peony", "Wild Rose", "Sunflower",
-    "Goldenrod", "Magnolia", "White Pine Cone and Tassel", "Black-Eyed Susan", "Mayflower",
-    "Pink and White Lady's Slipper", "White Hawthorn Blossom", "Bitterroot", "Sagebrush",
-    "Purple Lilac", "Common Meadow Violet", "Yucca Flower", "Rose", "Dogwood",
-    "Wild Prairie Rose", "Scarlet Carnation", "Oklahoma Rose", "Oregon Grape",
-    "Yellow Jessamine", "Pasque Flower", "Iris", "Bluebonnet", "Sego Lily", "Red Clover",
-    "American Dogwood", "Coast Rhododendron", "Rhododendron", "Wood Violet",
-    "Indian Paintbrush", "American Beauty Rose",
-]
-_FLOWER_ALIASES = {
-    "hawaiian hibiscus": "hibiscus",
-    "white hawthorn blossom": "hawthorn",
-    "common meadow violet": "violet",
-    "yucca flower": "yucca",
-}
-_DIRECTIONAL_PREFIXES = ("northern ", "western ", "eastern ", "southern ", "american ")
-_HONORIFIC_PREFIXES = ("mr. ", "sir. ", "mr ", "sir ", "lord ")
-
-
-def _remove_middle_word(s: str) -> str:
-    """First + last word for a 3-4 word all-alphabetic phrase (a middle name/initial), preserving
-    a trailing suffix (Jr/Sr/I-V) — same narrow scope as the original's `remove_middle_names`:
-    a 4-word phrase WITHOUT a suffix is left unchanged (their function only strips a single
-    inserted word, not two)."""
-    words = s.split()
-    if not (3 <= len(words) <= 4):
-        return s
-    if not all(w.isalpha() for w in words):
-        return s
-    if words[-1] in _SUFFIXES:
-        return f"{words[0]} {words[-2]} {words[-1]}" if len(words) == 4 else s
-    if len(words) == 4:
-        return s
-    return f"{words[0]} {words[2]}"
-
-
-def _strip_accents(s: str) -> str:
-    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
-
-
-def _base_normalize(s: str) -> str:
-    """Every step EXCEPT the final middle-word removal — used both directly and to build
-    `_NON_NAME_SET` (which must be compared against pre-middle-word-removal strings, matching
-    the original's `skip_middle_name_normalization=True` when building its own exclusion set)."""
-    s = _strip_accents(s.strip().lower())
-    for prefix in _HONORIFIC_PREFIXES:
-        if s.startswith(prefix):
-            s = s[len(prefix):]
-    s = re.sub(r"\s*\([^)]*\)", "", s)  # parenthetical explanation, e.g. "X (also known as Y)"
-    for alias, canon in _NAME_ALIASES.items():
-        s = s.replace(alias, canon)
-    # Washington DC and Alabama's motto each have two equally-valid forms in general use
-    # (place name vs "District of Columbia"; English translation vs the original Latin) —
-    # canonicalize both directions so either form matches the other.
-    s = s.replace("washington, d.c.", "district of columbia")
-    s = s.replace("d.c.", "district of columbia")
-    if s == "washington":
-        s = "district of columbia"
-    s = s.replace("audemus jura nostra defendere", "we dare defend our rights")
-    for ch in ",.-'`":
-        s = s.replace(ch, "")
-    s = re.sub(r"\band\b", "", s)  # drop the word "and" -> Oxford-comma-insensitive
-    s = re.sub(r"\s+", " ", s).strip()
-    if s.startswith("the "):
-        s = s[4:]
-    for prefix in _DIRECTIONAL_PREFIXES:
-        if s.startswith(prefix):
-            s = s[len(prefix):]
-    for alias, canon in _FLOWER_ALIASES.items():
-        s = s.replace(alias, canon)
-    return s.strip()
-
-
-_NON_NAME_SET = {_base_normalize(x) for x in _STATE_MOTTOS + _STATE_FLOWERS}
-
-
-def _normalize_string(s: str) -> str:
-    """Full normalization including middle-word removal, EXCEPT for known non-name multi-word
-    phrases (state mottos/flowers) where removing a "middle word" would corrupt a legitimate
-    answer rather than strip an inserted name — mirrors the original's `NORMALIZED_NON_NAME_SET`
-    guard exactly."""
-    base = _base_normalize(s)
-    if base in _NON_NAME_SET:
-        return base
-    return _remove_middle_word(base)
 
 
 def _bounded_gap_pattern(words: List[str]) -> str:
