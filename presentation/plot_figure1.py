@@ -14,10 +14,11 @@ from typing import Any, Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 
-from harness import config
+from harness import config, stats as hstats
 from presentation.figures import apply_style
 from presentation.plot_baseline_vs_peak import (
-    DEFAULT_RUN_NAME, Panel, _cond_short_label, _readable_text_color, compute_peaks,
+    DEFAULT_RUN_NAME, Panel, _baseline_condition, _cond_short_label, _draw_ci,
+    _readable_text_color, _value_label_y, compute_peaks,
 )
 
 DATASETS = ["gen_arithmetic_500", "nhop_2"]
@@ -31,7 +32,8 @@ def _best_peak(baseline_acc: float, peak_repeat: Dict[str, Any] | None,
 
 
 def plot_figure1(peaks: Dict[Tuple[str, str], Panel], models: List[str], datasets: List[str],
-                 out_path: Path) -> Path:
+                 out_path: Path,
+                 cis: Dict[Tuple[str, str, str], Tuple[float, float]] | None = None) -> Path:
     fig, axes = plt.subplots(1, len(datasets), figsize=(6.5 * len(datasets), 5.5))
     if len(datasets) == 1:
         axes = [axes]
@@ -51,20 +53,26 @@ def plot_figure1(peaks: Dict[Tuple[str, str], Panel], models: List[str], dataset
             peak = _best_peak(baseline_acc, peak_repeat, peak_filler)
             vals = [baseline_acc * 100, peak["acc_cond"] * 100 if peak else float("nan")]
             rows = [None, peak]
+            conds = [_baseline_condition(peak_repeat, peak_filler),
+                    peak["condition"] if peak else None]
             color = f"#{colors[model]}"
-            for bi, (val, row) in enumerate(zip(vals, rows)):
+            for bi, (val, row, cond) in enumerate(zip(vals, rows, conds)):
                 if val != val:
                     continue
                 xpos = x0 + bi * width
+                bar_alpha = 1.0 if bi == 0 else 0.75
                 ax.bar(xpos, val, width=width * 0.92, color=color,
-                       alpha=1.0 if bi == 0 else 0.75, edgecolor="#111111", linewidth=0.6)
+                       alpha=bar_alpha, edgecolor="#111111", linewidth=0.6, zorder=2)
+                ci = cis.get((model, dataset, cond)) if (cis is not None and cond) else None
+                _draw_ci(ax, xpos, val, ci, colors[model], bar_alpha)
                 sig_marker = " *" if (row is not None and row["sig_holm"]) else ""
-                ax.text(xpos, val + label_gap, f"{val:.1f}%{sig_marker}", ha="center", va="bottom",
-                       fontsize=8, fontweight="bold")
+                ax.text(xpos, _value_label_y(val, y_max, label_gap, ci),
+                       f"{val:.1f}%{sig_marker}", ha="center",
+                       va="bottom", fontsize=8, fontweight="bold", zorder=5)
                 if row is not None:
                     cond_txt = _cond_short_label(row["condition"])
                     ax.text(xpos, label_gap, cond_txt, ha="center", va="bottom", fontsize=7,
-                           color=_readable_text_color(colors[model], 0.75))
+                           color=_readable_text_color(colors[model], 0.75), zorder=5)
             group_center = x0 + width / 2
             xticks.append(group_center)
             xticklabels.append(config.short_model(model))
@@ -98,6 +106,8 @@ def main(argv: List[str] | None = None) -> int:
     ap.add_argument("--out", default=str(config.FIGURES_DIR / "figure1_baseline_vs_peak.png"))
     ap.add_argument("--alpha", type=float, default=0.001,
                     help="Holm-corrected significance cutoff for the '*' marker (default 0.001)")
+    ap.add_argument("--no-error-bars", action="store_true",
+                    help="omit the 95%% paired-bootstrap CI whisker on each bar (drawn by default)")
     args = ap.parse_args(argv)
 
     apply_style()
@@ -108,8 +118,9 @@ def main(argv: List[str] | None = None) -> int:
     datasets = args.dataset or DATASETS
 
     peaks = compute_peaks(spec, alpha=args.alpha)
+    cis = None if args.no_error_bars else hstats.paired_bootstrap_cis(spec, None)
     out = Path(args.out)
-    plot_figure1(peaks, models, datasets, out)
+    plot_figure1(peaks, models, datasets, out, cis)
     print(f"wrote {out}")
     for dataset in datasets:
         for model in models:

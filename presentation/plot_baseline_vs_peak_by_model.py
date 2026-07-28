@@ -19,10 +19,11 @@ from typing import Any, Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 
-from harness import config
+from harness import config, stats as hstats
 from presentation.figures import apply_style
 from presentation.plot_baseline_vs_peak import (
-    DEFAULT_RUN_NAME, Panel, _cond_short_label, _readable_text_color, compute_peaks,
+    DEFAULT_RUN_NAME, Panel, _baseline_condition, _cond_short_label, _draw_ci,
+    _readable_text_color, _value_label_y, compute_peaks,
 )
 
 
@@ -42,7 +43,8 @@ def _dataset_groups(datasets: List[str], uniform_scale: bool = False) -> List[Tu
 
 
 def plot_one_model(model: str, peaks: Dict[Tuple[str, str], Panel], datasets: List[str],
-                   out_path: Path, color_hex: str, uniform_scale: bool = False) -> Path:
+                   out_path: Path, color_hex: str, uniform_scale: bool = False,
+                   cis: Dict[Tuple[str, str, str], Tuple[float, float]] | None = None) -> Path:
     groups = _dataset_groups(datasets, uniform_scale)
     fig, axes = plt.subplots(1, len(groups),
                              figsize=(max(7, 2.6 * sum(len(g[1]) for g in groups)), 5.5))
@@ -63,19 +65,26 @@ def plot_one_model(model: str, peaks: Dict[Tuple[str, str], Panel], datasets: Li
                         peak_repeat["acc_cond"] * 100 if peak_repeat else float("nan"),
                         peak_filler["acc_cond"] * 100 if peak_filler else float("nan")]
                 rows = [None, peak_repeat, peak_filler]
-                for bi, (val, row) in enumerate(zip(vals, rows)):
+                conds = [_baseline_condition(peak_repeat, peak_filler),
+                        peak_repeat["condition"] if peak_repeat else None,
+                        peak_filler["condition"] if peak_filler else None]
+                for bi, (val, row, cond) in enumerate(zip(vals, rows, conds)):
                     if val != val:  # NaN -> no such condition for this dataset
                         continue
                     xpos = x0 + bi * width
+                    bar_alpha = 1.0 if bi == 0 else 0.75
                     ax.bar(xpos, val, width=width * 0.92, color=color,
-                           alpha=1.0 if bi == 0 else 0.75, edgecolor="#111111", linewidth=0.6)
+                           alpha=bar_alpha, edgecolor="#111111", linewidth=0.6, zorder=2)
+                    ci = cis.get((model, dataset, cond)) if (cis is not None and cond) else None
+                    _draw_ci(ax, xpos, val, ci, color_hex, bar_alpha)
                     sig_marker = " *" if (row is not None and row["sig_holm"]) else ""
-                    ax.text(xpos, val + label_gap, f"{val:.1f}%{sig_marker}", ha="center",
-                           va="bottom", fontsize=7.5, fontweight="bold")
+                    ax.text(xpos, _value_label_y(val, y_max, label_gap, ci),
+                           f"{val:.1f}%{sig_marker}", ha="center",
+                           va="bottom", fontsize=7.5, fontweight="bold", zorder=5)
                     if row is not None:
                         cond_txt = _cond_short_label(row["condition"])
                         ax.text(xpos, label_gap, cond_txt, ha="center", va="bottom", fontsize=6.5,
-                               color=_readable_text_color(color_hex, 0.75))
+                               color=_readable_text_color(color_hex, 0.75), zorder=5)
             group_center = x0 + width
             xticks.append(group_center)
             xticklabels.append(config.short_dataset(dataset))
@@ -114,6 +123,8 @@ def main(argv: List[str] | None = None) -> int:
                     help="force every panel to a 0-100 y-axis instead of 0-50 for n-hop; "
                          "saved under a separate filename (_uniform100 suffix), not overwriting "
                          "the default dual-scale figures")
+    ap.add_argument("--no-error-bars", action="store_true",
+                    help="omit the 95%% paired-bootstrap CI whisker on each bar (drawn by default)")
     args = ap.parse_args(argv)
 
     apply_style()
@@ -124,13 +135,14 @@ def main(argv: List[str] | None = None) -> int:
     datasets = args.dataset or list(spec["axes"].keys())
 
     peaks = compute_peaks(spec, alpha=args.alpha)
+    cis = None if args.no_error_bars else hstats.paired_bootstrap_cis(spec, None)
     colors = config.model_colors(models)
 
     out_dir = Path(args.out_dir)
     suffix = "_uniform100" if args.uniform_scale else ""
     for model in models:
         out = out_dir / f"{args.run}_baseline_vs_peak_by_model_{config.short_model(model)}{suffix}.png"
-        plot_one_model(model, peaks, datasets, out, colors[model], args.uniform_scale)
+        plot_one_model(model, peaks, datasets, out, colors[model], args.uniform_scale, cis)
         print(f"wrote {out}")
         for dataset in datasets:
             baseline_acc, peak_repeat, peak_filler = peaks.get((model, dataset), (None, None, None))

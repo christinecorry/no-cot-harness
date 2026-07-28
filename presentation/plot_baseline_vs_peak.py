@@ -64,8 +64,65 @@ def _cond_short_label(cond: str) -> str:
     return f"{'r' if kind == 'repeat' else 'f'}={value}"
 
 
+def _baseline_condition(peak_repeat: Dict[str, Any] | None, peak_filler: Dict[str, Any] | None) -> str:
+    """The baseline condition label matching this panel's match-demos suffix ('repeat_r10+md'
+    pairs with 'baseline+md', not bare 'baseline')."""
+    row = peak_repeat or peak_filler
+    if row is None:
+        return "baseline"
+    return "baseline+md" if row["condition"].endswith("+md") else "baseline"
+
+
+def _ci_shade(hex_color: str, bar_alpha: float) -> str:
+    """A shade of `hex_color` for its own CI whisker — lighter for a dark bar, darker for a light
+    one (blending toward white/black respectively) — so the whisker visibly belongs to that
+    model's own color rather than a neutral gray that can wash out against a dark fill, and
+    reads clearly either way."""
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+    er, eg, eb = (bar_alpha * c + (1 - bar_alpha) * 255 for c in (r, g, b))
+    luminance = 0.299 * er + 0.587 * eg + 0.114 * eb
+    mix = 0.55
+    if luminance < 150:
+        rr, gg, bb = (c * (1 - mix) + 255 * mix for c in (r, g, b))  # lighten
+    else:
+        rr, gg, bb = (c * (1 - mix) for c in (r, g, b))  # darken
+    return f"#{int(rr):02x}{int(gg):02x}{int(bb):02x}"
+
+
+def _draw_ci(ax: Any, xpos: float, val: float, ci: Tuple[float, float] | None,
+            color_hex: str, bar_alpha: float) -> None:
+    """A 95% paired-bootstrap CI whisker on one bar, shaded from that bar's own color (see
+    `_ci_shade`) so it reads as belonging to that model rather than a neutral overlay.
+    Note: since these are PAIRED comparisons, two bars' CIs visually overlapping (or not) doesn't
+    itself determine paired significance the way the '*' marker does — this is descriptive, not
+    the test."""
+    if ci is None:
+        return
+    lo, hi = ci[0] * 100, ci[1] * 100
+    ecolor = _ci_shade(color_hex, bar_alpha)
+    ax.errorbar(xpos, val, yerr=[[val - lo], [hi - val]], fmt="none", ecolor=ecolor,
+               elinewidth=1.0, capsize=3, capthick=1.0, alpha=0.85, zorder=4)
+
+
+def _value_label_y(val: float, y_max: float, label_gap: float,
+                   ci: Tuple[float, float] | None) -> float:
+    """Where the accuracy-value label sits: a FIXED, consistent gap above the bar top in the
+    common case — only nudged up to clear the CI's upper whisker if that whisker's cap would
+    otherwise land right on top of the number (rather than always floating the label above the
+    whisker regardless of how tall it is, which looks inconsistent bar-to-bar since CI width
+    varies a lot with sample size and base rate)."""
+    default_y = val + label_gap
+    if ci is None:
+        return default_y
+    whisker_top = ci[1] * 100
+    text_height = y_max * 0.045  # rough estimate of the label's own vertical extent
+    if default_y <= whisker_top <= default_y + text_height:
+        return whisker_top + label_gap
+    return default_y
+
+
 def plot_one_dataset(dataset: str, peaks: Dict[Tuple[str, str], Panel], models: List[str],
-                     out_path: Path) -> Path:
+                     out_path: Path, cis: Dict[Tuple[str, str, str], Tuple[float, float]] | None = None) -> Path:
     fig, ax = plt.subplots(figsize=(max(7, 2.2 * len(models)), 5.5))
     width = 0.25
     group_gap = 1.0
@@ -86,25 +143,32 @@ def plot_one_dataset(dataset: str, peaks: Dict[Tuple[str, str], Panel], models: 
                 peak_repeat["acc_cond"] * 100 if peak_repeat else float("nan"),
                 peak_filler["acc_cond"] * 100 if peak_filler else float("nan")]
         rows = [None, peak_repeat, peak_filler]
+        conds = [_baseline_condition(peak_repeat, peak_filler),
+                peak_repeat["condition"] if peak_repeat else None,
+                peak_filler["condition"] if peak_filler else None]
         color = f"#{colors[model]}"
         centers = []
-        for bi, (val, row) in enumerate(zip(vals, rows)):
+        for bi, (val, row, cond) in enumerate(zip(vals, rows, conds)):
             if val != val:  # NaN -> no such condition for this dataset
                 continue
             xpos = x0 + bi * width
             centers.append(xpos)
             ax.bar(xpos, val, width=width * 0.92, color=color,
-                   alpha=1.0 if bi == 0 else 0.75, edgecolor="#111111", linewidth=0.6)
-            # The accuracy value + significance marker sit just above the bar top; the condition
-            # label (peak bars only) sits at the bar's base, in a color chosen to read against
-            # that bar's own color, regardless of the bar's height.
+                   alpha=1.0 if bi == 0 else 0.75, edgecolor="#111111", linewidth=0.6, zorder=2)
+            bar_alpha = 1.0 if bi == 0 else 0.75
+            ci = cis.get((model, dataset, cond)) if (cis is not None and cond) else None
+            _draw_ci(ax, xpos, val, ci, colors[model], bar_alpha)
+            # The accuracy value + significance marker sit at a consistent gap above the bar top
+            # (nudged above the CI whisker only if its cap would otherwise land on the number);
+            # the condition label (peak bars only) sits at the bar's base, in a color chosen to
+            # read against that bar's own color, regardless of the bar's height.
             sig_marker = " *" if (row is not None and row["sig_holm"]) else ""
-            ax.text(xpos, val + label_gap, f"{val:.1f}%{sig_marker}", ha="center", va="bottom",
-                   fontsize=7.5, fontweight="bold")
+            ax.text(xpos, _value_label_y(val, y_max, label_gap, ci), f"{val:.1f}%{sig_marker}",
+                   ha="center", va="bottom", fontsize=7.5, fontweight="bold", zorder=5)
             if row is not None:
                 cond_txt = _cond_short_label(row["condition"])
                 ax.text(xpos, label_gap, cond_txt, ha="center", va="bottom", fontsize=6.5,
-                       color=_readable_text_color(colors[model], 0.75))
+                       color=_readable_text_color(colors[model], 0.75), zorder=5)
         group_center = x0 + width
         xticks.append(group_center)
         xticklabels.append(config.short_model(model))
@@ -138,6 +202,8 @@ def main(argv: List[str] | None = None) -> int:
     ap.add_argument("--alpha", type=float, default=0.001,
                     help="Holm-corrected significance cutoff for the '*' marker (default 0.001, "
                          "matching the source LessWrong post's own reporting convention)")
+    ap.add_argument("--no-error-bars", action="store_true",
+                    help="omit the subtle 95%% paired-bootstrap CI whisker on each bar (drawn by default)")
     args = ap.parse_args(argv)
 
     apply_style()
@@ -148,11 +214,12 @@ def main(argv: List[str] | None = None) -> int:
     datasets = args.dataset or list(spec["axes"].keys())
 
     peaks = compute_peaks(spec, alpha=args.alpha)
+    cis = None if args.no_error_bars else hstats.paired_bootstrap_cis(spec, None)
 
     out_dir = Path(args.out_dir)
     for dataset in datasets:
         out = out_dir / f"{args.run}_baseline_vs_peak_{dataset}.png"
-        plot_one_dataset(dataset, peaks, models, out)
+        plot_one_dataset(dataset, peaks, models, out, cis)
         print(f"wrote {out}")
         for model in models:
             baseline_acc, peak_repeat, peak_filler = peaks.get((model, dataset), (None, None, None))
