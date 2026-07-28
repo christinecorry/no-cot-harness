@@ -26,22 +26,24 @@ from presentation.plot_baseline_vs_peak import (
 )
 
 
-def _dataset_groups(datasets: List[str]) -> List[Tuple[str, List[str], int]]:
+def _dataset_groups(datasets: List[str], uniform_scale: bool = False) -> List[Tuple[str, List[str], int]]:
     """Split datasets into (panel title, dataset ids, y-axis max) groups by accuracy range —
-    same 0-50-for-nhop / 0-100-otherwise split plot_baseline_vs_peak.py uses per figure."""
+    same 0-50-for-nhop / 0-100-otherwise split plot_baseline_vs_peak.py uses per figure, unless
+    `uniform_scale` forces every panel to 0-100 (a separate, deliberately less-legible-for-nhop
+    variant some readers may still want for direct cross-panel comparability)."""
     big = [d for d in datasets if not d.startswith("nhop")]
     hop = [d for d in datasets if d.startswith("nhop")]
     groups = []
     if big:
         groups.append(("Gen-Arithmetic / Comp-Math", big, 100))
     if hop:
-        groups.append(("N-Hop", hop, 50))
+        groups.append(("N-Hop", hop, 100 if uniform_scale else 50))
     return groups
 
 
 def plot_one_model(model: str, peaks: Dict[Tuple[str, str], Panel], datasets: List[str],
-                   out_path: Path, color_hex: str) -> Path:
-    groups = _dataset_groups(datasets)
+                   out_path: Path, color_hex: str, uniform_scale: bool = False) -> Path:
+    groups = _dataset_groups(datasets, uniform_scale)
     fig, axes = plt.subplots(1, len(groups),
                              figsize=(max(7, 2.6 * sum(len(g[1]) for g in groups)), 5.5))
     if len(groups) == 1:
@@ -108,6 +110,10 @@ def main(argv: List[str] | None = None) -> int:
     ap.add_argument("--alpha", type=float, default=0.001,
                     help="Holm-corrected significance cutoff for the '*' marker (default 0.001, "
                          "matching the source LessWrong post's own reporting convention)")
+    ap.add_argument("--uniform-scale", action="store_true",
+                    help="force every panel to a 0-100 y-axis instead of 0-50 for n-hop; "
+                         "saved under a separate filename (_uniform100 suffix), not overwriting "
+                         "the default dual-scale figures")
     args = ap.parse_args(argv)
 
     apply_style()
@@ -121,9 +127,10 @@ def main(argv: List[str] | None = None) -> int:
     colors = config.model_colors(models)
 
     out_dir = Path(args.out_dir)
+    suffix = "_uniform100" if args.uniform_scale else ""
     for model in models:
-        out = out_dir / f"{args.run}_baseline_vs_peak_by_model_{config.short_model(model)}.png"
-        plot_one_model(model, peaks, datasets, out, colors[model])
+        out = out_dir / f"{args.run}_baseline_vs_peak_by_model_{config.short_model(model)}{suffix}.png"
+        plot_one_model(model, peaks, datasets, out, colors[model], args.uniform_scale)
         print(f"wrote {out}")
         for dataset in datasets:
             baseline_acc, peak_repeat, peak_filler = peaks.get((model, dataset), (None, None, None))

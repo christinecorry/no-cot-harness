@@ -81,7 +81,7 @@ def plot_figure1(peaks: Dict[Tuple[str, str], Panel], models: List[str], dataset
                       Patch(facecolor="#888888", alpha=0.75, label="peak (repeat or filler)")]
     axes[0].legend(handles=legend_handles, loc="upper left", fontsize=8)
 
-    fig.suptitle("Figure 1: Baseline vs. Peak No-CoT Augmentation", fontsize=14, fontweight="bold")
+    fig.suptitle("Baseline vs. Peak No-CoT Augmentation", fontsize=14, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path)
