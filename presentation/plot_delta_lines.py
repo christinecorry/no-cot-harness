@@ -40,10 +40,12 @@ def plot_one_dataset(dataset: str, axes_spec: dict, rows: List[Dict[str, Any]], 
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.2))
     colors = config.model_colors(models)
     for ax, (axis_key, title, xlabel) in zip(axes, PANELS):
-        # Baseline itself (repeat=1, filler=0) has no condition row of its own (delta is trivially
-        # 0 there by definition) — drop it from the x-axis rather than plotting a fake zero point.
+        # Baseline itself (repeat=1, filler=0) has no condition row of its own — delta is
+        # trivially 0 there by definition, not a computed statistic — but plotting it anyway as
+        # the line's starting point makes the jump from "no augmentation" to the first real
+        # condition visible, rather than the line appearing to start already mid-lift.
         anchor = 1 if axis_key == "repeat" else 0
-        values = [v for v in axes_spec.get(axis_key, []) if v != anchor]
+        values = axes_spec.get(axis_key, [])
         if not values:
             ax.axis("off")
             continue
@@ -57,6 +59,10 @@ def plot_one_dataset(dataset: str, axes_spec: dict, rows: List[Dict[str, Any]], 
                        and r["condition"].startswith(prefix)}
             ys, sig = [], []
             for v in values:
+                if v == anchor:
+                    ys.append(0.0)
+                    sig.append(False)  # the anchor is a reference point, not a tested condition
+                    continue
                 r = by_value.get(v)
                 ys.append(r["delta"] * 100 if r else float("nan"))
                 sig.append(bool(r["sig_holm"]) if r else False)
