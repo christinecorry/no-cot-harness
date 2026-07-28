@@ -255,7 +255,6 @@ _STATE_FLOWERS = [
 _FLOWER_ALIASES = {
     "hawaiian hibiscus": "hibiscus",
     "white hawthorn blossom": "hawthorn",
-    "common meadow violet": "violet",
     "yucca flower": "yucca",
     "wild native sunflower": "sunflower",
     "wild sunflower": "sunflower",
@@ -267,7 +266,17 @@ _FLOWER_ALIASES = {
     # same list (West Virginia), so collapsing "Coast Rhododendron" (Washington) down to it would
     # make the two states' answers indistinguishable.
     "washington rhododendron": "coast rhododendron",
+    # "common meadow violet": "violet" deliberately OMITTED (unlike the rest of this dict, which
+    # matches the ones in the paper's own normalize_answer) — New Jersey's "Common Meadow
+    # Violet" would collapse onto Illinois/Rhode Island's own actual "Violet", making three
+    # different states' gold answers indistinguishable. Confirmed via a full collision check
+    # across every string-valued fact table our vendored generator uses.
 }
+# "american " INCLUDED despite colliding with a different state's gold answer (Virginia's
+# "American Dogwood" -> "dogwood", same normalized form as North Carolina's "Dogwood"): the two
+# states' state flower really is the same species (Flowering Dogwood, Cornus florida) in real
+# life, so crediting the match is a deliberate call, not an oversight — confirmed with the
+# project owner 2026-07-28 after the collision check first flagged it.
 _DIRECTIONAL_PREFIXES = ("northern ", "western ", "eastern ", "southern ", "american ")
 _HONORIFIC_PREFIXES = ("mr. ", "sir. ", "mr ", "sir ", "lord ")
 
@@ -317,12 +326,15 @@ def _base_normalize_string(s: str) -> str:
     if s == "washington":
         s = "district of columbia"
     s = s.replace("audemus jura nostra defendere", "we dare defend our rights")
+    s = s.replace("fatti maschi,", "fatti maschii,")  # a common misspelling of Maryland's motto
     for ch in ",.-'`":
         s = s.replace(ch, "")
     s = re.sub(r"\band\b", "", s)  # drop the word "and" -> Oxford-comma-insensitive
     s = re.sub(r"\s+", " ", s).strip()
     if s.startswith("the "):
         s = s[4:]
+    if s.startswith("[") and s.endswith("]"):
+        s = s[1:-1]
     for prefix in _DIRECTIONAL_PREFIXES:
         if s.startswith(prefix):
             s = s[len(prefix):]
