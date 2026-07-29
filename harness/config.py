@@ -14,9 +14,10 @@ FIGURES_DIR = RESULTS_DIR / "figures"
 AGGREGATES_DIR = RESULTS_DIR / "aggregates"  # per-run accuracy aggregates (+ bootstrap CIs)
 STATS_DIR = RESULTS_DIR / "stats"            # significance tables (paired t-tests)
 
-# The three models this repo studies, all via the OpenRouter alias namespace (see the root
+# The four models this repo studies, all via the OpenRouter alias namespace (see the root
 # README's transport note for why).
-MODELS = ["anthropic/claude-opus-4.5", "openai/gpt-5.6-sol", "anthropic/claude-fable-5"]
+MODELS = ["anthropic/claude-opus-4.5", "openai/gpt-5.6-sol", "anthropic/claude-fable-5",
+         "anthropic/claude-opus-5"]
 
 # Condition grids, per dataset family: repeat counts (1 == baseline) and count-to-N filler
 # lengths (0 == baseline). Every run spec below draws its axes from these dicts.

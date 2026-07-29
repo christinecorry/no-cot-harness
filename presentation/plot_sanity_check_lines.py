@@ -189,7 +189,7 @@ def main(argv: List[str] | None = None) -> int:
         # eval file length is the actual target n for that dataset's panels.
         target_n = min(len(schema.load_jsonl(registry.DATASETS[dataset].eval_path)),
                        config.NAMED_RUNS[args.run]["n"])
-        out = out_dir / f"{args.run}_lines_{dataset}.png"
+        out = out_dir / f"lines_{dataset}.png"
         plot_one_dataset(dataset, axes_spec, counts, args.min_n, models, out, target_n)
         print(f"wrote {out}")
         print(describe_coverage(counts, models, dataset, args.min_n))

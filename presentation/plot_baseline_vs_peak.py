@@ -218,7 +218,7 @@ def main(argv: List[str] | None = None) -> int:
 
     out_dir = Path(args.out_dir)
     for dataset in datasets:
-        out = out_dir / f"{args.run}_baseline_vs_peak_{dataset}.png"
+        out = out_dir / f"baseline_vs_peak_{dataset}.png"
         plot_one_dataset(dataset, peaks, models, out, cis)
         print(f"wrote {out}")
         for model in models:

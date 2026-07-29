@@ -117,7 +117,7 @@ def main(argv: List[str] | None = None) -> int:
     out_dir = Path(args.out_dir)
     for dataset in datasets:
         axes_spec = spec["axes"][dataset]
-        out = out_dir / f"{args.run}_delta_lines_{dataset}.png"
+        out = out_dir / f"delta_lines_{dataset}.png"
         plot_one_dataset(dataset, axes_spec, rows, models, out)
         print(f"wrote {out}")
     return 0
