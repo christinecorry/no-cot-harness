@@ -33,7 +33,8 @@ def _best_peak(baseline_acc: float, peak_repeat: Dict[str, Any] | None,
 
 def plot_figure1(peaks: Dict[Tuple[str, str], Panel], models: List[str], datasets: List[str],
                  out_path: Path,
-                 cis: Dict[Tuple[str, str, str], Tuple[float, float]] | None = None) -> Path:
+                 cis: Dict[Tuple[str, str, str], Tuple[float, float]] | None = None,
+                 uniform_scale: bool = False) -> Path:
     fig, axes = plt.subplots(1, len(datasets), figsize=(6.5 * len(datasets), 5.5))
     if len(datasets) == 1:
         axes = [axes]
@@ -42,7 +43,7 @@ def plot_figure1(peaks: Dict[Tuple[str, str], Panel], models: List[str], dataset
     group_gap = 0.5
 
     for ax, dataset in zip(axes, datasets):
-        y_max = 50 if dataset.startswith("nhop") else 100
+        y_max = 100 if (uniform_scale or not dataset.startswith("nhop")) else 50
         label_gap = y_max * 0.01
         x0 = 0.0
         xticks, xticklabels = [], []
@@ -103,11 +104,16 @@ def main(argv: List[str] | None = None) -> int:
     ap.add_argument("--run", default=DEFAULT_RUN_NAME, choices=list(config.NAMED_RUNS))
     ap.add_argument("--models", help="comma-separated model ids; default: the chosen --run's own list")
     ap.add_argument("--dataset", action="append", help="dataset id (repeatable); default: gen_arithmetic_500,nhop_2")
-    ap.add_argument("--out", default=str(config.FIGURES_DIR / "figure1_baseline_vs_peak.png"))
+    ap.add_argument("--out", default=None,
+                    help="default: figure1_baseline_vs_peak.png, or _uniform100 if --uniform-scale")
     ap.add_argument("--alpha", type=float, default=0.001,
                     help="Holm-corrected significance cutoff for the '*' marker (default 0.001)")
     ap.add_argument("--no-error-bars", action="store_true",
                     help="omit the 95%% paired-bootstrap CI whisker on each bar (drawn by default)")
+    ap.add_argument("--uniform-scale", action="store_true",
+                    help="force the n-hop panel to the same 0-100 y-axis as Gen-Arithmetic instead "
+                         "of its own 0-50 (less legible for n-hop, but directly comparable across "
+                         "panels); saved under a separate _uniform100 filename by default")
     args = ap.parse_args(argv)
 
     apply_style()
@@ -119,8 +125,9 @@ def main(argv: List[str] | None = None) -> int:
 
     peaks = compute_peaks(spec, alpha=args.alpha)
     cis = None if args.no_error_bars else hstats.paired_bootstrap_cis(spec, None)
-    out = Path(args.out)
-    plot_figure1(peaks, models, datasets, out, cis)
+    suffix = "_uniform100" if args.uniform_scale else ""
+    out = Path(args.out) if args.out else config.FIGURES_DIR / f"figure1_baseline_vs_peak{suffix}.png"
+    plot_figure1(peaks, models, datasets, out, cis, args.uniform_scale)
     print(f"wrote {out}")
     for dataset in datasets:
         for model in models:
