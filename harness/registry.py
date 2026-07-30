@@ -10,10 +10,10 @@ Two orthogonal axes, so adding a dataset or a model is one row here:
 A dataset's `scorer` is anything exposing `parse_answer / score / answer_form`; every answer type
 lives in `harness.scoring` as a small class, and the driver duck-types on the three methods.
 
-This repo ships three models via the OpenRouter alias namespace — an adaptive-thinking-only model
-(cannot have its internal reasoning pass disabled via API parameter) and two models with the
-standard prefill/append/structured no-CoT channels — to study condition-matched few-shot demos.
-See the root README for why.
+This repo ships four models via the OpenRouter alias namespace — two adaptive-thinking-only
+models (cannot have their internal reasoning pass disabled via API parameter) and two models with
+the standard prefill/append/structured no-CoT channels — to study condition-matched few-shot
+demos. See the root README's "Transport" section for why.
 
 Datasets are NOT included in this repo (no generator, no data — see the README's "Data" section);
 `eval_path`/`pool_path` just describe where the harness expects to find them locally.

@@ -1,8 +1,9 @@
 """JSONL loading for eval/pool files.
 
 Every dataset record is expected to already be in the canonical shape the rest of the harness
-assumes: `{"id", "dataset_id", "problem", "gold_answer", "metadata": {...}}` (see the root
-README's "Data" section) — this module just reads it.
+assumes: `{"id", "dataset_id", "problem", "gold_answer", "metadata": {...}}`, plus
+`"gold_answer_str"` on few-shot pool records (see the root README's "Data" section) — this
+module just reads it.
 """
 from __future__ import annotations
 

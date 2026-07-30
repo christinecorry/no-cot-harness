@@ -17,12 +17,35 @@ Each model's default no-CoT channel is in `harness/registry.py`'s `_DEFAULT_METH
 live evidence behind each choice in the comments there. `--method` overrides any model's default
 for a controlled comparison.
 
+## Transport
+
+Every model is reached through OpenRouter by default: one OpenAI-compatible API and one unified
+reasoning-disable control across both providers, so all four models run through identical request
+code. `anthropic/...` ids can optionally route through the native Anthropic API instead
+(`--transport anthropic_native`) — same prompts, same channels, but with genuine prompt caching
+(OpenRouter was observed live to never cache these models) and access to the Message Batches API
+(`python -m harness.anthropic_batch`, 50% off both input and output).
+
+### What the no-CoT channels do and don't prove
+
+Models that accept an explicit reasoning-disable (`opus-4.5`, `gpt-5.6-sol`) run with reasoning
+turned off at the API level. The adaptive-thinking-only models (`fable-5`, `opus-5`) reject that
+parameter under every channel, so they default to a forced tool call (`structured`): the answer
+must come back as tool input, which makes free-text chain-of-thought in the output impossible —
+but forcing the output shape is not, by itself, proof that no internal reasoning pass occurred.
+Independent of channel, any response that reports reasoning tokens or visible reasoning content is
+scored wrong (`scoring.nocot_violation`), with the caveat that some OpenRouter providers omit the
+reasoning-token count. Read the adaptive models' numbers with that in mind; `--method append`
+runs their natural strict-system-prompt channel instead for a controlled comparison.
+
 ## Data
 
 **No dataset generator or data is included.** `harness/registry.py`'s `eval_path`/`pool_path`
 describe where the harness expects to find them locally; building or obtaining them is left to
 you — reach out to the maintainers for details. Expected schema (`harness/schema.py`): one JSON
-object per line, `{"id", "dataset_id", "problem", "gold_answer", "metadata": {...}}`.
+object per line, `{"id", "dataset_id", "problem", "gold_answer", "metadata": {...}}`. Few-shot
+pool records additionally need `"gold_answer_str"` — the answer exactly as the demo's
+`Answer: X` turn should render it (see `harness/prompt.py`'s `build_messages`).
 
 ## Running
 

@@ -2,13 +2,8 @@
 # Derived from secondlookresearch.com: warm off-white ground, near-black text,
 # muted-gray secondary, deep-maroon signature accent, Montserrat headings.
 #
-# Use it from any plotting script:
-#     import matplotlib.pyplot as plt
-#     plt.style.use("secondlook")          # if installed via install-agents.sh
-#     # or, portable / CI-safe:
-#     plt.style.use("analysis/secondlook.mplstyle")
-#
-# Edit this one file to retune the brand everywhere.
+# Every figure script loads this via `presentation/figures.py`'s `apply_style()`.
+# Edit this one file to retune the styling everywhere.
 
 # --- canvas -----------------------------------------------------------------
 figure.facecolor:   F5F5F1

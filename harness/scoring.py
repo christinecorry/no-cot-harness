@@ -188,9 +188,9 @@ def _leading_int(text: str) -> Optional[int]:
 # both the parsed answer and gold.
 #
 # The reference data below (person-name aliases, state mottos/flowers) is plain factual reference
-# data, not code, drawn from the same fact domain the n-hop generator itself uses (that generator's
-# fact tables are vendored verbatim under harness/data_curation/vendor/multi_hop/inputs/) —
-# hardcoded here as plain strings since this module has no reason to import the generator.
+# data, not code, drawn from the same public fact domain the (unpublished — see the README's
+# "Data" section) n-hop dataset generator uses — hardcoded here as plain strings since this
+# module has no dependency on that generator.
 _SUFFIXES = {"jr", "sr", "i", "ii", "iii", "iv", "v"}
 
 # Historical figures whose commonly-used name isn't simply first+last: the generic middle-word
