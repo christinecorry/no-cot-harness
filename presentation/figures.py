@@ -1,5 +1,5 @@
 """Shared plotting helpers: house style, aggregate/CI loaders, and the adaptive-model masking
-rule, reused by every figure script in this package (currently `plot_condition_match.py`).
+rule, reused by every figure script in this package.
 """
 from __future__ import annotations
 

@@ -2,9 +2,9 @@
 
 A harness for the no-CoT filler-token / problem-repeat replication: does giving a model more
 forward-pass compute (repeated copies of a problem, or meaningless filler tokens) improve its
-accuracy when forced to answer immediately, with no chain-of-thought? Run across three models —
-`anthropic/claude-opus-4.5`, `openai/gpt-5.6-sol`, `anthropic/claude-fable-5` — via the OpenRouter
-alias namespace.
+accuracy when forced to answer immediately, with no chain-of-thought? Run across four models —
+`anthropic/claude-opus-4.5`, `openai/gpt-5.6-sol`, `anthropic/claude-fable-5`,
+`anthropic/claude-opus-5` — via the OpenRouter alias namespace.
 
 ## Condition-matched few-shot demos
 
@@ -30,11 +30,11 @@ object per line, `{"id", "dataset_id", "problem", "gold_answer", "metadata": {..
 pip install -r requirements.txt
 export OPENROUTER_API_KEY=...
 
-python -m harness.sweep --smoke --n 20                       # live e2e check, plain demos
-python -m harness.sweep --smoke --n 20 --match-demos          # live e2e check, condition-matched
-python -m harness.sweep --run condition_matched --estimate    # cost table, no submit
-python -m harness.sweep --run condition_matched --max-budget-usd 50
-python scripts/replay_store.py                                # $0 regression gate on the store
+python -m harness.sweep --smoke --n 20                          # live e2e check, plain demos
+python -m harness.sweep --smoke --n 20 --match-demos             # live e2e check, condition-matched
+python -m harness.sweep --run condition_matched_500 --estimate   # cost table, no submit
+python -m harness.sweep --run condition_matched_500 --max-budget-usd 50
+python scripts/replay_store.py                                   # $0 regression gate on the store
 ```
 
 ## Layout
@@ -42,9 +42,25 @@ python scripts/replay_store.py                                # $0 regression ga
 - `harness/` — `registry.py` (datasets, models, method resolution), `backends.py` (no-CoT
   elicitation per channel), `scoring.py` (parsing + the no-CoT violation rule), `sweep.py` (CLI +
   resumable store), `stats.py` (CIs + significance), `prompt.py` / `conditions.py` (prompt
-  assembly), `schema.py` (JSONL loading).
-- `presentation/` — `figures.py` (shared helpers), `plot_condition_match.py` (plain vs
-  condition-matched accuracy).
-- `scripts/replay_store.py` — re-scores every stored response and asserts it matches the store.
+  assembly), `schema.py` (JSONL loading), `anthropic_batch.py` (native Anthropic Batch API
+  transport).
+- `presentation/` — figure-generation scripts, all reading the sweep store directly:
+  - `figures.py` — shared helpers (house style, aggregate/CI loaders, adaptive-model masking).
+  - `plot_baseline_vs_peak.py` — baseline vs peak-repeat vs peak-filler accuracy, one figure per
+    dataset, bars grouped by model (the headline significance figure).
+  - `plot_baseline_vs_peak_by_model.py` — the same numbers transposed: one figure per model, bars
+    grouped by dataset.
+  - `plot_figure1.py` — the top-line summary figure: baseline vs each model's peak condition, on
+    Gen-Arithmetic and 2-Hop side by side.
+  - `plot_delta_lines.py` — accuracy lift (condition minus baseline) across the full repeat/filler
+    grid, one line per model.
+  - `plot_sanity_check_lines.py` — raw accuracy across the same grid, plus per-condition coverage
+    counts (a data-completeness check as much as a figure).
+  - `plot_condition_match.py` / `plot_cm_vs_plain.py` — plain-demo vs condition-matched accuracy
+    comparisons (the latter reads an external plain-demo store; see its docstring for context).
+- `scripts/`
+  - `replay_store.py` — re-scores every stored response and asserts it matches the store.
+  - `reasoning_ceiling_probe.py` — a one-off control measuring accuracy with reasoning genuinely
+    unconstrained, to confirm low no-CoT scores reflect real suppression, not incapability.
 - `results/` — committable aggregates/figures (no problem text). `runs/` and `data/` are
   gitignored.

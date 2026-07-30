@@ -275,8 +275,7 @@ _FLOWER_ALIASES = {
 # "american " INCLUDED despite colliding with a different state's gold answer (Virginia's
 # "American Dogwood" -> "dogwood", same normalized form as North Carolina's "Dogwood"): the two
 # states' state flower really is the same species (Flowering Dogwood, Cornus florida) in real
-# life, so crediting the match is a deliberate call, not an oversight — confirmed with the
-# project owner 2026-07-28 after the collision check first flagged it.
+# life, so crediting the match is a deliberate call, not an oversight.
 _DIRECTIONAL_PREFIXES = ("northern ", "western ", "eastern ", "southern ", "american ")
 _HONORIFIC_PREFIXES = ("mr. ", "sir. ", "mr ", "sir ", "lord ")
 
