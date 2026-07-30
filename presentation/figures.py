@@ -47,18 +47,19 @@ def load_cis(path: Path) -> Dict[Tuple[str, str, str], Tuple[float, float]]:
 
 
 # --- adaptive-model masking --------------------------------------------------------------------
-# The adaptive-only model's natural (append) channel refuses/thinks at low augmentation; a
-# plotted point there reads as "~0% accuracy" when the truth is "declined to answer". Its
-# accuracies are masked to conditions where it answered immediately (zero reasoning) on at least
-# this share of items.
-ADAPTIVE_MODEL = "anthropic/claude-fable-5"
+# The adaptive-only models' natural (append) channel refuses/thinks at low augmentation; a
+# plotted point there reads as "~0% accuracy" when the truth is "declined to answer". Their
+# accuracies are masked to conditions where the model answered immediately (zero reasoning) on at
+# least this share of items.
+ADAPTIVE_MODELS = {"anthropic/claude-fable-5", "anthropic/claude-opus-5"}
 ADAPTIVE_MIN_ANSWER_RATE = 0.85
 _adaptive_rates_cache: Dict[tuple, dict] = {}
 
 
 def adaptive_answer_rates(datasets: tuple) -> dict:
-    """(dataset, condition) -> share of items the adaptive model answered immediately with zero
-    reasoning, over the given dataset ids. Reads the local result store (aggregate counts only)."""
+    """(model, dataset, condition) -> share of items that adaptive model answered immediately with
+    zero reasoning, over the given dataset ids. Reads the local result store (aggregate counts
+    only)."""
     key = tuple(sorted(datasets))
     if key not in _adaptive_rates_cache:
         from harness import sweep
@@ -66,13 +67,13 @@ def adaptive_answer_rates(datasets: tuple) -> dict:
         counts: dict = {}
         with sweep.STORE_PATH.open() as f:
             for line in f:
-                if f'"{ADAPTIVE_MODEL}"' not in line:
+                if not any(f'"{m}"' in line for m in ADAPTIVE_MODELS):
                     continue
                 try:
                     r = json.loads(line)
                 except json.JSONDecodeError:
                     continue  # tolerate a concurrent writer's partial tail line
-                if (r.get("model") == ADAPTIVE_MODEL and r.get("dataset") in wanted
+                if (r.get("model") in ADAPTIVE_MODELS and r.get("dataset") in wanted
                         and r.get("error") is None):
                     # Same signal set as scoring.nocot_violation: tokens AND visible reasoning
                     # content — a provider that returns the content but omits the count must not
@@ -81,7 +82,7 @@ def adaptive_answer_rates(datasets: tuple) -> dict:
                     answered = (r.get("answer_form") == "immediate"
                                 and u.get("reasoning_tokens", 0) == 0
                                 and u.get("reasoning_chars", 0) == 0)
-                    k = (r["dataset"], r["condition"])
+                    k = (r["model"], r["dataset"], r["condition"])
                     a, t = counts.get(k, (0, 0))
                     counts[k] = (a + answered, t + 1)
         _adaptive_rates_cache[key] = {k: a / t for k, (a, t) in counts.items() if t}
@@ -89,13 +90,13 @@ def adaptive_answer_rates(datasets: tuple) -> dict:
 
 
 def mask_adaptive(acc: dict, datasets: tuple) -> dict:
-    """Drop the adaptive model's low-answer-rate cells from an accuracy dict keyed
+    """Drop the adaptive models' low-answer-rate cells from an accuracy dict keyed
     (model, dataset, condition) — masked points render as line gaps, never as fake ~0%."""
-    if not any(m == ADAPTIVE_MODEL for (m, _d, _c) in acc):
+    if not any(m in ADAPTIVE_MODELS for (m, _d, _c) in acc):
         return acc
     rates = adaptive_answer_rates(datasets)
     return {k: v for k, v in acc.items()
-            if k[0] != ADAPTIVE_MODEL or rates.get((k[1], k[2]), 0.0) >= ADAPTIVE_MIN_ANSWER_RATE}
+            if k[0] not in ADAPTIVE_MODELS or rates.get(k, 0.0) >= ADAPTIVE_MIN_ANSWER_RATE}
 
 
 def acc_pct(acc: dict, model: str, dataset: str, condition: str) -> float:

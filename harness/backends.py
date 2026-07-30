@@ -72,10 +72,12 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # OpenRouter's default routing.
 _ANTHROPIC_PROVIDER_PIN = {"only": ["anthropic"], "allow_fallbacks": False}
 
-# Models verified live to 400 on OpenRouter's unified reasoning-disable ("Reasoning is mandatory
-# for this endpoint and cannot be disabled") — these route to OpenRouterAdaptiveBackend under
-# `append`, and skip the disable param under `structured` too.
-_MANDATORY_REASONING = {"anthropic/claude-fable-5"}
+# Adaptive-thinking-only models: no reasoning-disable is ever sent — they route to
+# OpenRouterAdaptiveBackend under `append` and skip the disable param under `structured` too.
+# fable-5 verified live to 400 on OpenRouter's unified reasoning-disable ("Reasoning is mandatory
+# for this endpoint and cannot be disabled"); opus-5 is adaptive-only as well (verified live on
+# the native API — see `_NATIVE_ADAPTIVE_THINKING`) and runs the same methodology.
+_MANDATORY_REASONING = {"anthropic/claude-fable-5", "anthropic/claude-opus-5"}
 
 # Claude ids verified live to honor a trailing assistant message as a genuine prefill
 # continuation via OpenRouter (adaptive-only ids reject it, mirroring their native behavior).
