@@ -113,7 +113,7 @@ def main(argv: List[str] | None = None) -> int:
 
     out_dir = Path(args.out_dir)
     for dataset in datasets:
-        out = out_dir / f"figure_condition_match_{dataset}.png"
+        out = out_dir / "condition_match" / f"{dataset}.png"
         plot_one_dataset(dataset, plain_path, matched_path, out)
         print(f"wrote {out}")
     return 0

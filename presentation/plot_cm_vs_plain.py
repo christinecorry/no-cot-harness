@@ -165,7 +165,7 @@ def main(argv: List[str] | None = None) -> int:
         plain_counts = {(dataset, cond): v for (d, cond), v in plain_counts_all.items()
                         if d == plain_dataset}
         target_n = len(schema.load_jsonl(registry.DATASETS[dataset].eval_path))
-        out = out_dir / f"cm_vs_plain_{config.short_model(args.model)}_{dataset}.png"
+        out = out_dir / "cm_vs_plain" / f"{config.short_model(args.model)}_{dataset}.png"
         plot_one_dataset(dataset, run_axes[dataset], cm_counts, plain_counts, args.min_n, out,
                          config.short_model(args.model), target_n)
         print(f"wrote {out}")

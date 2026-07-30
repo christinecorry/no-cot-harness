@@ -141,7 +141,7 @@ def main(argv: List[str] | None = None) -> int:
     out_dir = Path(args.out_dir)
     suffix = "_uniform100" if args.uniform_scale else ""
     for model in models:
-        out = out_dir / f"baseline_vs_peak_by_model_{config.short_model(model)}{suffix}.png"
+        out = out_dir / "baseline_vs_peak_by_model" / f"{config.short_model(model)}{suffix}.png"
         plot_one_model(model, peaks, datasets, out, colors[model], args.uniform_scale, cis)
         print(f"wrote {out}")
         for dataset in datasets:
