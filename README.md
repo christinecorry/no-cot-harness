@@ -6,6 +6,17 @@ accuracy when forced to answer immediately, with no chain-of-thought? Run across
 `anthropic/claude-opus-4.5`, `openai/gpt-5.6-sol`, `anthropic/claude-fable-5`,
 `anthropic/claude-opus-5` — via the OpenRouter alias namespace.
 
+Replicates the experiments from two posts by Ryan Greenblatt:
+
+- [Recent LLMs can use filler tokens or problem repeats to improve (no-CoT) math
+  performance](https://www.lesswrong.com/posts/NYzYJ2WoB74E6uj9L/recent-llms-can-use-filler-tokens-or-problem-repeats-to)
+  (LessWrong, Dec 2025) — the math filler/repeat experiments.
+- [Recent LLMs can do 2-hop and 3-hop latent (no-CoT) reasoning on natural
+  facts](https://www.lesswrong.com/posts/aYtrLhoZtCKZnfBvA/recent-llms-can-do-2-hop-and-3-hop-latent-no-cot-reasoning)
+  (LessWrong, Jan 2026) — the n-hop fact-composition experiments.
+
+"The source paper" / "the source LessWrong post" in code comments refer to these.
+
 ## Condition-matched few-shot demos
 
 Few-shot demos can be shown plainly, or rendered through the same repeat/filler condition as the
