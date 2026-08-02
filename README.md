@@ -73,25 +73,29 @@ python scripts/replay_store.py                                   # $0 regression
 
 ## Layout
 
-- `harness/` — `registry.py` (datasets, models, method resolution), `backends.py` (no-CoT
-  elicitation per channel), `scoring.py` (parsing + the no-CoT violation rule), `sweep.py` (CLI +
-  resumable store), `stats.py` (CIs + significance), `prompt.py` / `conditions.py` (prompt
-  assembly), `schema.py` (JSONL loading), `anthropic_batch.py` (native Anthropic Batch API
-  transport).
-- `presentation/` — figure-generation scripts, all reading the sweep store directly:
-  - `figures.py` — shared helpers (house style, aggregate/CI loaders, adaptive-model masking).
-  - `plot_baseline_vs_peak.py` — baseline vs peak-repeat vs peak-filler accuracy, one figure per
-    dataset, bars grouped by model (the headline significance figure).
-  - `plot_baseline_vs_peak_by_model.py` — the same numbers transposed: one figure per model, bars
-    grouped by dataset.
-  - `plot_figure1.py` — the top-line summary figure: baseline vs each model's peak condition, on
-    Gen-Arithmetic and 2-Hop side by side.
-  - `plot_delta_lines.py` — accuracy lift (condition minus baseline) across the full repeat/filler
-    grid, one line per model.
-  - `plot_sanity_check_lines.py` — raw accuracy across the same grid, plus per-condition coverage
-    counts (a data-completeness check as much as a figure).
-  - `plot_condition_match.py` / `plot_cm_vs_plain.py` — plain-demo vs condition-matched accuracy
-    comparisons (the latter reads an external plain-demo store; see its docstring for context).
+- `harness/` — the experiment itself:
+  - `config.py` — paths, the model roster, the repeat/filler condition grids, and the named run
+    specs the CLI accepts (`--run ...`).
+  - `registry.py` — the dataset and model registries, and `resolve_method`, which picks each
+    (model, dataset) pair's default no-CoT channel (with the live evidence in comments).
+  - `conditions.py` — renders a problem through a condition: repeated N times, or followed by a
+    count-to-N filler sequence.
+  - `prompt.py` — assembles the few-shot messages around the rendered problem; demos are plain by
+    default or rendered through the query's condition with `--match-demos`.
+  - `backends.py` — one backend per no-CoT channel (prefill / append / structured) and transport
+    (OpenRouter or native Anthropic): builds the request that forces an immediate answer.
+  - `sweep.py` — the CLI driver: expands a run spec into cells, runs them concurrently with cost
+    estimates and a budget cap, and appends to a resumable JSONL store (rerunning skips
+    already-collected cells).
+  - `anthropic_batch.py` — the same cells submitted through Anthropic's async Message Batches API
+    at its 50% discount, writing rows into the same store.
+  - `scoring.py` — answer parsing per answer type, exact-match-after-normalization for string
+    golds, and the no-CoT violation rule (any reported reasoning scores the item wrong).
+  - `stats.py` — paired bootstrap CIs and paired t-tests with Holm correction.
+  - `schema.py` — JSONL record loading.
+- `presentation/` — the figure-generation scripts behind everything in `results/figures/`, all
+  reading the sweep store or committed aggregates directly (shared helpers in `figures.py`; each
+  script's docstring says which figure it draws).
 - `scripts/`
   - `replay_store.py` — re-scores every stored response and asserts it matches the store.
   - `reasoning_ceiling_probe.py` — a one-off control measuring accuracy with reasoning genuinely
