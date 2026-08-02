@@ -4,4 +4,6 @@ runs/
 __pycache__/
 *.pyc
 results/aggregates/pilot_summary.json
+results/aggregates/sanity_check_100_aggregate.json
+results/stats/sanity_check_100_significance.json
 .sanity_check_scripts/
