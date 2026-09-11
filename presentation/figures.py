@@ -4,6 +4,7 @@ rule, reused by every figure script in this package.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -12,7 +13,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 # A distinct marker shape per model line, assigned by the model's order in a spec.
-MARKERS = ["o", "s", "^", "D", "v", "P"]
+MARKERS = ["o", "s", "^", "D", "v", "P", "X", "h"]  # extended 2026-09-10: eight models in the astra set
 
 _STYLE_PATH = Path(__file__).resolve().parent / "secondlook.mplstyle"
 
@@ -24,6 +25,11 @@ def apply_style() -> None:
         plt.style.use("secondlook")
     except OSError:
         plt.style.use(str(_STYLE_PATH))
+    # SECONDLOOK_WHITE_BG=1: white figure/axes background instead of the house off-white
+    # (replicator's call for the figures_with_astra set, 2026-09-10). Everything else unchanged.
+    if os.environ.get("SECONDLOOK_WHITE_BG") == "1":
+        for k in ("figure.facecolor", "axes.facecolor", "savefig.facecolor"):
+            plt.rcParams[k] = "white"
 
 
 def cond_label(axis: str, value: int) -> str:
@@ -103,3 +109,25 @@ def acc_pct(acc: dict, model: str, dataset: str, condition: str) -> float:
     """Accuracy as a percentage for plotting; NaN for a missing/masked cell (a line gap)."""
     v = acc.get((model, dataset, condition))
     return v * 100 if v is not None else float("nan")
+
+
+# Every panel runs 0-100. n-hop panels historically used a tight 0-50 axis (every model topped
+# out well under 20% there); gpt-6-astra clears it by a wide margin (87-93% on 2-hop, 31-63% on
+# 4-hop), which pushed bars and labels outside the axes and collapsed the layout, so the
+# replicator's call (2026-09-10) is one uniform scale everywhere. `peak_pct` / `uniform_scale`
+# are accepted so call sites read the same whether or not a tight variant returns later.
+def panel_ymax(dataset: str, peak_pct: float = float("nan"), uniform_scale: bool = False) -> int:
+    return 100
+
+
+def peak_pct_of(peaks: dict, models, datasets) -> float:
+    """Largest baseline/peak accuracy (percent) over (model, dataset) panels in a compute_peaks
+    result — NaN when nothing is present."""
+    vals = []
+    for m in models:
+        for d in datasets:
+            baseline_acc, pr, pf = peaks.get((m, d), (None, None, None))
+            if baseline_acc is not None:
+                vals.append(baseline_acc * 100)
+            vals += [r["acc_cond"] * 100 for r in (pr, pf) if r is not None]
+    return max(vals) if vals else float("nan")

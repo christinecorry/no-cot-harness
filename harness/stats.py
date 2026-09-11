@@ -25,28 +25,41 @@ from . import config, sweep
 Cell = Tuple[str, str, str]  # (model, dataset, condition)
 
 
-def load_item_scores(spec: Dict[str, Any], method: str | None = None) -> Dict[Cell, Dict[str, bool]]:
+def load_item_scores(spec: Dict[str, Any], method: str | None = None,
+                     transport: str | None = None) -> Dict[Cell, Dict[str, bool]]:
     """Per-item correctness for every cell in `spec`, keyed (model, dataset, condition) ->
     {item_id: ok}. `method` is the run's forced CLI method (None = each model's static default).
 
     Mirrors `sweep.aggregate`, EXCEPT matching by (model, dataset, condition, item_id) rather than
     the cell's `sig` — `sig` bakes in the method label, which differs by TRANSPORT
     ("openrouter_prefill" vs "anthropic_native_prefill" for the identical elicitation), while
-    `enumerate_cells` always assumes `transport="openrouter"` when building `sig` here. Since
+    `enumerate_cells` assumes `transport="openrouter"` when building `sig` here. Since
     condition-matched cells are commonly collected via native/batch transport, matching on `sig`
     would silently find almost nothing for them. Condition labels don't vary by transport, so
     matching on (model, dataset, condition, item_id) is transport-agnostic and correct regardless
     of which transport actually collected a row (verified earlier: prompts are byte-identical
     across transports for the same model/method).
-    """
+
+    `transport=None` keeps that agnostic matching (last clean row per content key wins — fine
+    while the store holds ONE collected variant per key). Passing a transport makes matching
+    precise: rows must ALSO carry one of the method labels `enumerate_cells` yields under that
+    transport. Required whenever the same content exists under two labels — e.g. opus-5's
+    released `anthropic_native_tool` rows vs its explicit-disable `anthropic_native_tool_nothink`
+    re-measurement, where agnostic matching would silently pick whichever landed later in the
+    file."""
+    cells = (sweep.enumerate_cells(spec, method) if transport is None
+             else sweep.enumerate_cells(spec, method, transport=transport))
+    labels = None if transport is None else {c["method"] for c in cells}
     wanted = {(c["model"], c["dataset"], sweep._cond_key(c["cond"].label, c.get("match_demos", False)),
               c["item"]["id"])
-             for c in sweep.enumerate_cells(spec, method)}
+             for c in cells}
     scores: Dict[Cell, Dict[str, bool]] = defaultdict(dict)
     with sweep.STORE_PATH.open() as f:
         for line in f:
             r = json.loads(line)
             if r.get("error") is not None:
+                continue
+            if labels is not None and r["method"] not in labels:
                 continue
             key = (r["model"], r["dataset"], r["condition"], r["item_id"])
             if key in wanted:
@@ -76,14 +89,15 @@ def _cond_sort_key(cond: str) -> Tuple[int, int, str]:
 
 
 def paired_bootstrap_cis(spec: Dict[str, Any], method: str, n_boot: int = 10000, seed: int = 0,
-                         alpha: float = 0.05) -> Dict[Cell, Tuple[float, float]]:
+                         alpha: float = 0.05,
+                         transport: str | None = None) -> Dict[Cell, Tuple[float, float]]:
     """Return a (lo, hi) accuracy CI for every cell, from a paired bootstrap over problems.
 
     Within each (model, dataset) we restrict to the problems answered in *all* of that model's
     conditions (the paired set), draw one resample of those problem positions per iteration, and
     apply it to every condition so the conditions move together. CI = the central (1-alpha) band.
     """
-    scores = load_item_scores(spec, method)
+    scores = load_item_scores(spec, method, transport=transport)
     rng = np.random.default_rng(seed)
     lo_pct, hi_pct = 100 * alpha / 2, 100 * (1 - alpha / 2)
 
@@ -133,7 +147,8 @@ def _holm(pvals: List[float]) -> List[float]:
     return adj
 
 
-def paired_ttests(spec: Dict[str, Any], method: str, alpha: float = 0.05) -> List[Dict[str, Any]]:
+def paired_ttests(spec: Dict[str, Any], method: str, alpha: float = 0.05,
+                  transport: str | None = None) -> List[Dict[str, Any]]:
     """Paired t-test of each condition vs its baseline, with Holm correction within each panel.
 
     The family for the Holm adjustment is the set of (condition vs baseline) tests within one
@@ -141,7 +156,7 @@ def paired_ttests(spec: Dict[str, Any], method: str, alpha: float = 0.05) -> Lis
     `alpha` is the Holm-corrected significance cutoff (default 0.05); pass a stricter value (e.g.
     0.001, matching the source paper's own reporting convention) for a more conservative marker.
     """
-    scores = load_item_scores(spec, method)
+    scores = load_item_scores(spec, method, transport=transport)
     by_panel: Dict[Tuple[str, str, str], List[str]] = defaultdict(list)
     for (model, dataset, cond) in scores:
         by_panel[(model, dataset, _split_cond(cond)[1])].append(cond)
@@ -170,14 +185,15 @@ def paired_ttests(spec: Dict[str, Any], method: str, alpha: float = 0.05) -> Lis
     return rows
 
 
-def write_significance(spec: Dict[str, Any], run_name: str, method: str) -> Path:
+def write_significance(spec: Dict[str, Any], run_name: str, method: str,
+                       transport: str | None = None) -> Path:
     """Write the condition-vs-baseline paired-t table (raw + Holm) to results/ (numbers only).
 
     Meta records WHEN and over WHAT the table was computed (spec n + per-panel pair counts), so a
     table computed on one item set is detectable against an aggregate later regrown on another —
     without this, a stale significance file silently contradicts its sibling aggregate."""
     from datetime import datetime, timezone
-    rows = paired_ttests(spec, method)
+    rows = paired_ttests(spec, method, transport=transport)
     panel_pairs: Dict[str, int] = {}
     for r in rows:
         key = f"{r['model']}/{r['dataset']}"
@@ -196,11 +212,12 @@ def write_significance(spec: Dict[str, Any], run_name: str, method: str) -> Path
 
 
 def attach_cis_to_aggregate(aggregate_path: Path, spec: Dict[str, Any], method: str,
-                            n_boot: int = 10000, seed: int = 0) -> Path:
+                            n_boot: int = 10000, seed: int = 0,
+                            transport: str | None = None) -> Path:
     """Add ci_lo / ci_hi / ci_method to each row of an aggregate JSON in place; return the path."""
     path = Path(aggregate_path)
     data = json.loads(path.read_text())
-    cis = paired_bootstrap_cis(spec, method, n_boot=n_boot, seed=seed)
+    cis = paired_bootstrap_cis(spec, method, n_boot=n_boot, seed=seed, transport=transport)
     ci_method = f"paired_bootstrap_{n_boot}_pct95"
     for row in data["aggregate"]:
         ci = cis.get((row["model"], row["dataset"], row["condition"]))

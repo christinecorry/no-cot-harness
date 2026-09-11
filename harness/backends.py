@@ -66,32 +66,100 @@ MAX_ANSWER_TOKENS = 50
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-# Pin Claude-via-OpenRouter requests to Anthropic's own serving stack. OpenRouter can otherwise
-# load-balance "anthropic/..." ids across backing providers per request, which would silently mix
-# serving stacks inside one experiment. Applied only to "anthropic/" ids — other namespaces keep
+# Pin OpenRouter requests to ONE backing serving stack per model family. OpenRouter otherwise
+# load-balances a namespaced id across backing providers per request, which would silently mix
+# serving stacks inside one experiment — and a no-CoT compliance verdict measured on one stack
+# does not describe another. Namespace prefix -> provider slug; a namespace absent here keeps
 # OpenRouter's default routing.
-_ANTHROPIC_PROVIDER_PIN = {"only": ["anthropic"], "allow_fallbacks": False}
+#   anthropic/  -> Anthropic's own stack (verified live: responses report provider=="Anthropic").
+#   moonshotai/ -> Moonshot's own stack. kimi-k3's clean-compliance evidence (2026-08-05) was
+#                  collected across THREE stacks (Chutes/DigitalOcean/Fireworks), so a pin is
+#                  required before any real run; the first-party endpoint is the natural choice
+#                  and prices the same as the default ($3/$15 per M, checked live).
+#   google/     -> Google AI Studio. Both available stacks are Google first-party (AI Studio
+#                  and Vertex) at identical prices; the 2026-08-05/07 probe evidence mixed the
+#                  two, so one is fixed here — AI Studio, the surface that served the clean
+#                  probe calls for every elicitable Gemini.
+_PROVIDER_PINS = {"anthropic/": "anthropic", "moonshotai/": "moonshotai",
+                  "google/": "google-ai-studio",
+                  # Open-weight arm (2026-08-11, from the nocot tool's probed profiles):
+                  # author's own stack where one exists, else the best full-precision host.
+                  "qwen/": "alibaba", "minimax/": "minimax/fp8", "z-ai/": "z-ai",
+                  "nvidia/": "together", "meta-llama/": "google-vertex/us-east5",
+                  # gpt-6-astra (2026-09-09): pinned by EXACT id, not the "openai/" namespace —
+                  # gpt-5.6-sol's stored rows were collected unpinned and must keep that request
+                  # shape. OpenRouter lists three OpenAI first-party tags for Astra plus Azure;
+                  # "openai" is the standard tier ($10/$50). Switch to "openai/flex" (half price,
+                  # lower priority, same weights) only as a deliberate cost decision.
+                  "openai/gpt-6-astra": "openai"}
 
-# Adaptive-thinking-only models: no reasoning-disable is ever sent — they route to
-# OpenRouterAdaptiveBackend under `append` and skip the disable param under `structured` too.
-# fable-5 verified live to 400 on OpenRouter's unified reasoning-disable ("Reasoning is mandatory
-# for this endpoint and cannot be disabled"); opus-5 is adaptive-only as well (verified live on
-# the native API — see `_NATIVE_ADAPTIVE_THINKING`) and runs the same methodology.
-_MANDATORY_REASONING = {"anthropic/claude-fable-5", "anthropic/claude-opus-5"}
+# Models whose endpoint rejects OpenRouter's unified reasoning-disable: no disable is ever sent
+# — they route to OpenRouterAdaptiveBackend under `append`, and skip the disable param under
+# `structured` and `prefill` too (enforcement falls to the channel shape + the strict prompt +
+# `scoring.nocot_violation`). fable-5 verified live to 400 on the disable ("Reasoning is
+# mandatory for this endpoint and cannot be disabled"). opus-5 remains listed on THIS
+# (OpenRouter) side even though the endpoint now accepts the disable on both transports (probed
+# 2026-08-04, see `_NATIVE_EXPLICIT_DISABLE`): every stored OpenRouter opus-5 row was collected
+# without the disable, so flipping this entry would silently change what its OpenRouter channels
+# send — a separate decision to make explicitly, with its own re-run, not as a side effect.
+# The Gemini rows are from the 2026-08-05/07 probe cards: every listed endpoint 400s the
+# disable the same way ("Reasoning is mandatory"); listing them here converts those hard 400s
+# into runnable adaptive-regime channels.
+_MANDATORY_REASONING = {
+    "anthropic/claude-fable-5", "anthropic/claude-opus-5",
+    "google/gemini-2.5-pro", "google/gemini-3.1-pro-preview",
+    "google/gemini-3.5-flash", "google/gemini-3.5-flash-lite", "google/gemini-3.6-flash",
+    # gpt-6-astra (probed 2026-09-09): the pinned
+    # OpenAI endpoint 400s the unified disable with the same "Reasoning is mandatory" text —
+    # unlike gpt-5.6-sol, which accepts it. Its forced-tool probe calls billed 0 reasoning
+    # tokens; its prefill probe calls billed a fixed 11-12 (scored as violations).
+    "openai/gpt-6-astra",
+    # fable-5.1 (probed 2026-09-10, both transports): unified disable 400s ("Reasoning is
+    # mandatory"), native thinking.type.disabled/enabled both 400 (adaptive + effort low is the
+    # floor, "none" invalid), assistant prefill hard-400s, and — unlike fable-5 — tool_choice
+    # type "tool"/"any" is NOT supported, so the forced-tool structured channel is gone.
+    "anthropic/claude-fable-5.1",
+}
 
-# Claude ids verified live to honor a trailing assistant message as a genuine prefill
-# continuation via OpenRouter (adaptive-only ids reject it, mirroring their native behavior).
-_SUPPORTS_PREFILL = {"anthropic/claude-opus-4.5"}
+# Models verified live (probe cards: 3/3 numeric continuation, 0 reasoning) to honor a trailing
+# assistant message as a genuine prefill continuation via OpenRouter. Not Claude-only: most
+# Gemini endpoints forward the shape cleanly too — for the mandatory-reasoning ones this is
+# their ONLY probe-clean channel. (gpt-5.6-sol is deliberately absent: it answers as a fresh
+# turn instead of continuing — "silently_dropped". gemini-3.6-flash and 3.5-flash-lite hard-400
+# the shape itself.)
+_SUPPORTS_PREFILL = {
+    "anthropic/claude-opus-4.5",
+    # gpt-6-astra (probe 2026-09-09): the trailing assistant turn IS forwarded as a genuine
+    # continuation (3/3 numeric continuation, no restated marker) — the first OpenAI id to do
+    # so (sol "silently_dropped"). Listed so the channel can be MATRIXED; the probe calls
+    # billed 11-12 reasoning tokens each, so it is not clean until the strict-prompt variant
+    # proves otherwise on real data.
+    "openai/gpt-6-astra",
+    "google/gemini-3-flash-preview",
+    "google/gemini-3.1-flash-lite",
+    "google/gemini-3.1-pro-preview",
+    "google/gemini-2.5-pro",
+    "google/gemini-3.5-flash",
+}
+
+# Closed-think prefill is gated separately from plain prefill: an endpoint that forwards a
+# trailing assistant message does NOT necessarily treat a closed think block as a completed
+# reasoning phase (the nocot suite saw the same text go 32/32 violations on llama-4). Only
+# models whose closed-think style is probe-verified clean belong here.
+_SUPPORTS_CLOSED_PREFILL = {"google/gemini-2.5-pro"}
 
 
 def _or_extra_body(model: str, *, reasoning_off: bool = True) -> Dict[str, Any]:
     """The OpenRouter extra_body for `model`: the unified reasoning-disable (skipped for models
-    that reject it) plus the Anthropic provider pin for anthropic/* ids. EVERY OpenRouter request
-    path builds its extra_body here, so a new backend cannot forget the pin. May return {} —
-    callers that must not send an empty extra_body should only attach it when truthy."""
+    that reject it) plus this namespace's provider pin, if it has one (`_PROVIDER_PINS`). EVERY
+    OpenRouter request path builds its extra_body here, so a new backend cannot forget the pin.
+    May return {} — callers that must not send an empty extra_body should only attach it when
+    truthy."""
     body: Dict[str, Any] = {"reasoning": {"enabled": False}} if reasoning_off else {}
-    if model.startswith("anthropic/"):
-        body["provider"] = dict(_ANTHROPIC_PROVIDER_PIN)
+    for prefix, provider in _PROVIDER_PINS.items():
+        if model.startswith(prefix):
+            body["provider"] = {"only": [provider], "allow_fallbacks": False}
+            break
     return body
 
 
@@ -153,11 +221,21 @@ class OpenRouterBackend(OpenAICompatBackend):
                           "reported reasoning_tokens>0 scored wrong")
 
     def client(self) -> Any:
+        import httpx
         import openai
+        # Real timeouts (2026-09-10): during the astra collection a fraction of OpenRouter
+        # requests stalled on open connections until the SDK's default 600s timeout, then
+        # retried and succeeded — no error rows, just a throughput collapse from ~700k to
+        # ~360k tokens/min while six parallel probe requests from a fresh client returned in
+        # 3s. A 60s read timeout fails a stalled request fast; the SDK retries it (3 tries)
+        # and a still-failing cell lands as an error row, retried on resume. Request
+        # content is unchanged — this is transport plumbing only.
         return openai.OpenAI(
             base_url=OPENROUTER_BASE_URL,
             api_key=os.environ.get("OPENROUTER_API_KEY"),
             default_headers={"X-Title": "no-cot-harness"},
+            timeout=httpx.Timeout(60.0, connect=10.0),
+            max_retries=3,
         )
 
     def build_params(self, model: str, messages: List[Dict[str, Any]], *,
@@ -206,25 +284,66 @@ class OpenRouterAdaptiveBackend(OpenRouterBackend):
 
 
 class OpenRouterPrefillBackend(OpenRouterBackend):
-    """Claude via OpenRouter under the prefill method: OpenRouter forwards a trailing assistant
-    message to the Anthropic provider as an assistant prefill, so the model continues an
-    assistant turn that already says "Answer:" (verified live: continuation arrives without the
-    prefix, reasoning_tokens=0). Only meaningful for "anthropic/..." ids — `backend_for` gates the
-    route on `_SUPPORTS_PREFILL`."""
+    """Prefill via OpenRouter: a trailing assistant message is forwarded to the backing provider
+    as an assistant prefill, so the model continues an assistant turn that already says
+    "Answer:" (verified live: continuation arrives without the prefix, reasoning_tokens=0).
+    `backend_for` gates the route on `_SUPPORTS_PREFILL` — Claude ids and the Gemini endpoints
+    whose probes show a genuine continuation; for mandatory-reasoning models this structural
+    channel is the only probe-clean one, and no disable param is sent (see build_params)."""
 
     method = "openrouter_prefill"
     no_cot_enforcement = ("prefill 'Answer:' (trailing assistant message via OpenRouter) + "
-                          "reasoning {enabled:false} + provider pinned to Anthropic + small max_tokens")
+                          "reasoning disabled where the endpoint accepts it (strict prompt "
+                          "where it doesn't) + provider pin where configured + small max_tokens")
+
+    def __init__(self, model: str = "") -> None:
+        # Mandatory-reasoning models get the strict prompt on this channel too: the 2026-08-07
+        # elicitation suite found prefill:strict fully clean on gemini-3.1-pro (16/16) while
+        # prefill:plain let one baseline call reason — same belt-and-suspenders as the adaptive
+        # append channel. Disable-accepting models keep the dataset's plain prompt.
+        if model in _MANDATORY_REASONING:
+            self.system_base = prompt.STRICT_NOCOT_PROMPT
 
     def build_params(self, model: str, messages: List[Dict[str, Any]], *,
                      system: str, max_tokens: int = MAX_ANSWER_TOKENS) -> Dict[str, Any]:
         msgs = ([{"role": "system", "content": system}] + list(messages)
                 + [{"role": "assistant", "content": PREFILL}])
+        # Mandatory-reasoning endpoints 400 on the disable param, so they get the pure prefill
+        # shape (same fallback as the structured backends) — the continuation structure is the
+        # enforcement, and any reasoning still scores wrong via `scoring.nocot_violation`.
         return {"model": model, "messages": msgs, "max_completion_tokens": max_tokens,
-                "extra_body": _or_extra_body(model)}
+                "extra_body": _or_extra_body(model,
+                                             reasoning_off=model not in _MANDATORY_REASONING)}
 
     def extract_text(self, resp: Any) -> str:
         return PREFILL + (resp.choices[0].message.content or "")
+
+
+class OpenRouterClosedThinkPrefillBackend(OpenRouterPrefillBackend):
+    """Closed-think prefill: the trailing assistant message opens AND CLOSES an empty think
+    block before the "Answer:" cue, so an always-thinking endpoint that keys its mandatory
+    reasoning pass off the reply structure treats the phase as already completed and continues
+    straight into the answer. The block is ours — the model never generates a token inside it.
+    Channel text mirrors the nocot elicitation tool's probe-gated style byte-for-byte; that
+    tool's evidence for gemini-2.5-pro: 0 violations, all answers immediate, on every probed
+    cell (gen_arithmetic baseline/f300/f1000, 8/8 each; comp_math and nhop_2 piloted to f100),
+    where the OPEN prefill — plain and strict variants both — lets the thinking pass re-fire
+    on gen f300/f1000 rows (27-42 billed reasoning tokens mid-continuation). observed_only
+    enforcement: an implementation
+    behavior, not a contract — re-pilot per run. Same strict-prompt policy as the parent for
+    mandatory-reasoning models; any leak still scores wrong via `scoring.nocot_violation`."""
+
+    method = "openrouter_prefill_closed"
+    _CLOSED_PREFILL = f"<think>\n</think>\n\n{PREFILL}"
+    no_cot_enforcement = ("prefill closed think block + 'Answer:' (trailing assistant message) "
+                          "+ strict prompt on mandatory-reasoning endpoints + provider pin + "
+                          "small max_tokens")
+
+    def build_params(self, model: str, messages: List[Dict[str, Any]], *,
+                     system: str, max_tokens: int = MAX_ANSWER_TOKENS) -> Dict[str, Any]:
+        params = super().build_params(model, messages, system=system, max_tokens=max_tokens)
+        params["messages"][-1] = {"role": "assistant", "content": self._CLOSED_PREFILL}
+        return params
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -393,16 +512,27 @@ class OpenRouterToolBackend(OpenRouterBackend):
 
 # Opus 4.5 (extended-thinking-only): thinking is opt-in, omitting it is the no-CoT state.
 #
-# Fable 5 and Opus 5 specifically (not a general "adaptive models" rule — each model needs its
-# own check, same as `_MANDATORY_REASONING`): both 400 on `thinking: {type: "enabled"}`.
+# Fable 5 (not a general "adaptive models" rule — each model needs its own check, same as
+# `_MANDATORY_REASONING`): 400s on `thinking: {type: "enabled"}` and on an explicit disable.
 # Suppression attempt: `thinking: {type: "adaptive"}, output_config: {effort: "low"}` — "none" is
 # NOT a valid effort value (verified live: 400s, "Input should be 'low', 'medium', 'high', 'xhigh'
 # or 'max'"; "low" is the actual minimum) — + the strict prompt; `scoring.nocot_violation` is the
 # real enforcement regardless of whether this helps.
-_NATIVE_ADAPTIVE_THINKING = {"anthropic/claude-fable-5", "anthropic/claude-opus-5"}
+_NATIVE_ADAPTIVE_THINKING = {"anthropic/claude-fable-5", "anthropic/claude-fable-5.1"}
+
+# Opus 5 was originally in the adaptive-only set (July 2026: 400 on explicit thinking params,
+# native API), but the endpoint CHANGED: re-probed 2026-08-04 (native transport,
+# native transport), `thinking: {type:
+# "disabled"}` is now accepted and OBEYED — 5/5 calls, 0 reasoning tokens/chars, all correct.
+# So it runs with the explicit disable (API-enforced, like opus-4.5's omission — no strict
+# prompt needed). The OpenRouter-side `_MANDATORY_REASONING` entry is deliberately unchanged
+# in this commit: its channels are a separate decision with their own stored evidence.
+_NATIVE_EXPLICIT_DISABLE = {"anthropic/claude-opus-5"}
 
 
 def _native_thinking_params(model: str) -> Dict[str, Any]:
+    if model in _NATIVE_EXPLICIT_DISABLE:
+        return {"thinking": {"type": "disabled"}}
     if model in _NATIVE_ADAPTIVE_THINKING:
         return {"thinking": {"type": "adaptive"}, "output_config": {"effort": "low"}}
     return {}
@@ -427,7 +557,10 @@ class AnthropicNativeBackend:
 
     def client(self) -> Any:
         import anthropic
-        return anthropic.Anthropic()
+        # This environment carries several Anthropic keys; the xlab research workspace is
+        # this project's billing home. Prefer it explicitly, fall back to the SDK default.
+        return anthropic.Anthropic(
+            api_key=os.environ.get("ANTHROPIC_XLAB_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"))
 
     def extract_text(self, resp: Any) -> str:
         return next((b.text for b in resp.content if b.type == "text"), "")
@@ -505,8 +638,14 @@ class AnthropicNativeToolBackend(AnthropicNativeBackend):
     no_cot_enforcement = ("forced tool use (submit_answer, native tool_choice) + thinking omitted "
                           "(or adaptive-minimum on adaptive-only ids) — answer as a tool call, no free text")
 
-    def __init__(self, answer_schema: str = "integer"):
+    def __init__(self, answer_schema: str = "integer", model: str = ""):
         self._tool = _TOOLS[answer_schema]
+        # The explicit-disable variant is a DIFFERENT request shape than what this label
+        # historically collected (opus-5's stored anthropic_native_tool rows were gathered
+        # under the pre-2026-08-04 adaptive+low-effort params), so it keys under its own
+        # label — the store must never hold two request shapes behind one signature.
+        if model in _NATIVE_EXPLICIT_DISABLE:
+            self.method = "anthropic_native_tool_nothink"
 
     def build_params(self, model: str, messages: List[Dict[str, Any]], *,
                      system: str, max_tokens: int = MAX_ANSWER_TOKENS) -> Dict[str, Any]:
@@ -532,7 +671,7 @@ class AnthropicNativeToolBackend(AnthropicNativeBackend):
         return _dict_tool_violation(self.extract_tool_input(resp), resp.stop_reason == "max_tokens")
 
 
-_VALID_METHODS = ("prefill", "append", "structured")
+_VALID_METHODS = ("prefill", "prefill_closed", "append", "structured")
 
 
 _VALID_TRANSPORTS = ("openrouter", "anthropic_native")
@@ -562,13 +701,22 @@ def backend_for(model: str, method: str, answer_schema: str = "integer", *,
         if not model.startswith("anthropic/"):
             raise ValueError(f"{model!r}: anthropic_native transport is for anthropic/* ids only.")
         if method == "structured":
-            return AnthropicNativeToolBackend(answer_schema)
+            return AnthropicNativeToolBackend(answer_schema, model)
         if method == "append":
             return AnthropicNativeAppendBackend(model)
+        if method == "prefill_closed":
+            raise ValueError(f"{model!r}: 'prefill_closed' is an OpenRouter-transport channel "
+                             "(probed per OR endpoint) — not available on anthropic_native.")
         if model in _SUPPORTS_PREFILL:
             return AnthropicNativePrefillBackend()
         raise ValueError(f"{model!r}: this model cannot 'prefill' — use 'append' or 'structured'.")
 
+    if method == "prefill_closed":
+        if model not in _SUPPORTS_CLOSED_PREFILL:
+            raise ValueError(f"{model!r}: closed-think prefill is probe-verified only for "
+                             f"{sorted(_SUPPORTS_CLOSED_PREFILL)} — accepting a trailing "
+                             "assistant message does not imply the closed think block works.")
+        return OpenRouterClosedThinkPrefillBackend(model)
     if method == "structured":
         # Claude aliases use a forced tool call (mirrors the mechanics this repo studies for the
         # adaptive-only model); other namespaces use a strict JSON schema.
@@ -581,7 +729,7 @@ def backend_for(model: str, method: str, answer_schema: str = "integer", *,
         return OpenRouterBackend()
     # Prefill: only Claude ids that honor a trailing assistant message as a continuation.
     if model in _SUPPORTS_PREFILL:
-        return OpenRouterPrefillBackend()
+        return OpenRouterPrefillBackend(model)
     raise ValueError(f"{model!r}: this model cannot 'prefill' — use 'append' or 'structured'.")
 
 

@@ -1,0 +1,153 @@
+{
+  "meta": {
+    "method": "append_noreason",
+    "model_methods": {
+      "moonshotai/kimi-k3": "append_noreason"
+    },
+    "models": [
+      "moonshotai/kimi-k3"
+    ],
+    "n": 100000,
+    "transport": "openrouter",
+    "generated_at_utc": "2026-09-11T05:18:35+00:00",
+    "bootstrap": {
+      "n_boot": 10000,
+      "seed": 0,
+      "ci": "percentile_95"
+    }
+  },
+  "aggregate": [
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "baseline+md",
+      "n": 594,
+      "correct": 12,
+      "accuracy": 0.0202,
+      "ci_lo": 0.0101,
+      "ci_hi": 0.032,
+      "ci_method": "paired_bootstrap_10000_pct95"
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "filler_f10+md",
+      "n": 594,
+      "correct": 7,
+      "accuracy": 0.0118,
+      "ci_lo": 0.0034,
+      "ci_hi": 0.0202,
+      "ci_method": "paired_bootstrap_10000_pct95"
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "filler_f100+md",
+      "n": 594,
+      "correct": 15,
+      "accuracy": 0.0253,
+      "ci_lo": 0.0135,
+      "ci_hi": 0.0387,
+      "ci_method": "paired_bootstrap_10000_pct95"
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "filler_f1000+md",
+      "n": 594,
+      "correct": 12,
+      "accuracy": 0.0202,
+      "ci_lo": 0.0101,
+      "ci_hi": 0.032,
+      "ci_method": "paired_bootstrap_10000_pct95"
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "filler_f30+md",
+      "n": 594,
+      "correct": 11,
+      "accuracy": 0.0185,
+      "ci_lo": 0.0084,
+      "ci_hi": 0.0303,
+      "ci_method": "paired_bootstrap_10000_pct95"
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "filler_f300+md",
+      "n": 594,
+      "correct": 15,
+      "accuracy": 0.0253,
+      "ci_lo": 0.0135,
+      "ci_hi": 0.0387,
+      "ci_method": "paired_bootstrap_10000_pct95"
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "repeat_r10+md",
+      "n": 594,
+      "correct": 19,
+      "accuracy": 0.032,
+      "ci_lo": 0.0185,
+      "ci_hi": 0.0471,
+      "ci_method": "paired_bootstrap_10000_pct95"
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "repeat_r2+md",
+      "n": 594,
+      "correct": 16,
+      "accuracy": 0.0269,
+      "ci_lo": 0.0152,
+      "ci_hi": 0.0404,
+      "ci_method": "paired_bootstrap_10000_pct95"
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "repeat_r20+md",
+      "n": 594,
+      "correct": 15,
+      "accuracy": 0.0253,
+      "ci_lo": 0.0135,
+      "ci_hi": 0.0387,
+      "ci_method": "paired_bootstrap_10000_pct95"
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "repeat_r3+md",
+      "n": 594,
+      "correct": 18,
+      "accuracy": 0.0303,
+      "ci_lo": 0.0168,
+      "ci_hi": 0.0455,
+      "ci_method": "paired_bootstrap_10000_pct95"
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "repeat_r40+md",
+      "n": 594,
+      "correct": 23,
+      "accuracy": 0.0387,
+      "ci_lo": 0.0236,
+      "ci_hi": 0.0556,
+      "ci_method": "paired_bootstrap_10000_pct95"
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "repeat_r5+md",
+      "n": 594,
+      "correct": 17,
+      "accuracy": 0.0286,
+      "ci_lo": 0.0152,
+      "ci_hi": 0.0421,
+      "ci_method": "paired_bootstrap_10000_pct95"
+    }
+  ]
+}

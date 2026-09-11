@@ -1,13 +1,15 @@
 """Run an accuracy sweep synchronously, with a resumable result store. Default transport is
 OpenRouter; anthropic/* ids can optionally route through the native Anthropic API instead
-(`--transport anthropic_native`, --smoke only so far — see harness/anthropic_batch.py for the
-native Batch API path, which reuses this module's cell/scoring logic but isn't synchronous).
+(`--transport anthropic_native`, honored by --smoke and --run — see harness/anthropic_batch.py
+for the native Batch API path, which reuses this module's cell/scoring logic but isn't
+synchronous).
 
 A sweep evaluates every (model, dataset, method, condition, item) cell. Results are stored in a
 JSONL keyed by a signature of that 5-tuple, so a run is idempotent: re-running skips cells that
 are already done, and scaling up the item count only evaluates the new cells. Because `method`
-(prefill | append | structured) is part of the key, the same model under different methods is
-kept as separate, non-colliding result sets — likewise for condition-matched demos (`+md` suffix).
+(prefill | prefill_closed | append | structured) is part of the key, the same model under
+different methods is kept as separate, non-colliding result sets — likewise for
+condition-matched demos (`+md` suffix).
 
 Per-item records (with problem text + raw output) go to the gitignored store under runs/.
 Aggregate accuracy (no problem text) is written to results/ and is safe to commit.
@@ -169,7 +171,13 @@ def _eval_cell(cell: Dict[str, Any], client: Any) -> Dict[str, Any]:
         text = conditions.render(item["problem"], cond)
         messages = prompt.build_messages(cell["pool"], text, bk,
                                          demo_cond=cond if cell.get("match_demos") else None)
-        system = prompt.system_for(cond, base=bk.system_base or ds.system_prompt, suffix=ds.filler_suffix)
+        # Defer to the dataset's answer-type-adapted strict prompt when the backend wants a
+        # strict base — mirrors the batch/estimator path (parity-audit C2: this sync path
+        # previously sent the math-worded strict prompt on nhop's strict-channel cells).
+        system = prompt.system_for(cond,
+                                   base=((ds.strict_prompt or bk.system_base)
+                                         if bk.system_base is not None else ds.system_prompt),
+                                   suffix=ds.filler_suffix)
         resp, out = bk.complete(client, m, messages, system=system, max_tokens=ds.max_answer_tokens)
         parsed = ds.scorer.parse_answer(out)
         usage = bk.usage_dict(resp)
@@ -298,10 +306,12 @@ def _model_methods(cells: List[Dict[str, Any]]) -> Dict[str, str]:
     return {m: ",".join(sorted(labels)) for m, labels in sorted(by_model.items())}
 
 
-def aggregate(spec: Dict[str, Any], run_name: str, forced_method: str | None = None
-              ) -> List[Dict[str, Any]]:
-    """Aggregate accuracy by (model, dataset, condition) for this spec; write to results/."""
-    cells = enumerate_cells(spec, forced_method)
+def aggregate(spec: Dict[str, Any], run_name: str, forced_method: str | None = None,
+              transport: str = "openrouter") -> List[Dict[str, Any]]:
+    """Aggregate accuracy by (model, dataset, condition) for this spec; write to results/.
+    `transport` must name the transport the run was COLLECTED under — sigs bake in the
+    transport-specific method label, so the wrong transport matches nothing."""
+    cells = enumerate_cells(spec, forced_method, transport=transport)
     wanted = {c["sig"] for c in cells}
     # Dedup by signature (last clean row wins) — a duplicate clean sig (e.g. two concurrent
     # resumes) must not double-count in the accuracy denominator.
@@ -324,6 +334,7 @@ def aggregate(spec: Dict[str, Any], run_name: str, forced_method: str | None = N
     out = config.AGGREGATES_DIR / f"{run_name}_aggregate.json"
     meta = {"method": labels[0] if len(labels) == 1 else ",".join(labels),
             "model_methods": model_methods, "models": spec["models"], "n": spec["n"],
+            "transport": transport,
             "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     out.write_text(json.dumps({"meta": meta, "aggregate": rows}, indent=2) + "\n")
     return rows
@@ -496,7 +507,7 @@ def run_named(args: argparse.Namespace) -> int:
         spec = {**spec, "models": args.models.split(",")}  # local override; e.g. run one model first
     _log(f"run={run_name} n={spec['n']} models={[config.short_model(m) for m in spec['models']]}")
 
-    cells = enumerate_cells(spec, args.method)
+    cells = enumerate_cells(spec, args.method, transport=args.transport)
     done = load_done_sigs()  # read the store ONCE, not per cell
     todo = [c for c in cells if c["sig"] not in done]
     _log(f"cells={len(cells)} done={len(cells) - len(todo)} todo={len(todo)}")
@@ -513,7 +524,7 @@ def run_named(args: argparse.Namespace) -> int:
     else:
         _log("nothing to run; aggregating from store.")
 
-    rows = aggregate(spec, run_name, args.method)
+    rows = aggregate(spec, run_name, args.method, transport=args.transport)
     print_aggregate(rows)
     if args.no_report:
         _log("DONE (--no-report: skipped significance + CIs)")
@@ -524,8 +535,13 @@ def run_named(args: argparse.Namespace) -> int:
     # (presentation/figures.py, presentation/plot_condition_match.py).
     from . import stats  # local import: stats imports sweep, so avoid a top-level cycle
     agg_path = config.AGGREGATES_DIR / f"{run_name}_aggregate.json"
-    sig_path = stats.write_significance(spec, run_name, args.method)
-    stats.attach_cis_to_aggregate(agg_path, spec, args.method)
+    # Default (openrouter) runs keep stats' historical transport-AGNOSTIC row matching — their
+    # rows may have been collected via native batch under native labels. An explicit non-default
+    # transport switches stats to precise label matching, required when the store holds the same
+    # content under two labels (see stats.load_item_scores).
+    stats_transport = args.transport if args.transport != "openrouter" else None
+    sig_path = stats.write_significance(spec, run_name, args.method, transport=stats_transport)
+    stats.attach_cis_to_aggregate(agg_path, spec, args.method, transport=stats_transport)
     _log(f"wrote {sig_path.name} + bootstrap CIs (render figures via presentation/)")
     _log("DONE")
     return 0
@@ -539,7 +555,8 @@ def main(argv: List[str] | None = None) -> int:
                     help="run a named sweep end-to-end (run remaining cells, aggregate, report)")
     ap.add_argument("--estimate", action="store_true",
                     help="with --run: print the per-(model, dataset) cost table and exit (no submit)")
-    ap.add_argument("--method", default=None, choices=["prefill", "append", "structured"],
+    ap.add_argument("--method", default=None,
+                    choices=["prefill", "prefill_closed", "append", "structured"],
                     help="force ONE method everywhere (a controlled comparison); "
                          "default: each model's static default in registry.py")
     ap.add_argument("--max-budget-usd", type=float, default=None, help="abort if estimate exceeds this")
@@ -555,9 +572,10 @@ def main(argv: List[str] | None = None) -> int:
                     help="condition-match every few-shot demo to the query's repeat/filler "
                          "condition (opt-in; default renders demos bare)")
     ap.add_argument("--transport", default="openrouter", choices=["openrouter", "anthropic_native"],
-                    help="--smoke only for now (--run/--estimate assume openrouter; "
-                         "harness/anthropic_batch.py is the native-batch path); anthropic/* ids "
-                         "only for anthropic_native")
+                    help="applies to --smoke and --run (for --run it must name the transport the "
+                         "run's rows were/are collected under — sigs bake in the transport-"
+                         "specific label; batch collection itself lives in "
+                         "harness/anthropic_batch.py); anthropic/* ids only for anthropic_native")
     args = ap.parse_args(argv)
 
     if args.smoke:

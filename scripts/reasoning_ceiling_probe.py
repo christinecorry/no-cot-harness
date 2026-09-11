@@ -37,7 +37,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from harness import config, registry, schema  # noqa: E402
-from harness.backends import OPENROUTER_BASE_URL, _ANTHROPIC_PROVIDER_PIN  # noqa: E402
+from harness.backends import OPENROUTER_BASE_URL, _or_extra_body  # noqa: E402
 # String-answer normalization (accents, honorifics, name/element aliases, guarded middle-word
 # removal for person names, etc.) is shared with the core scorer rather than duplicated here —
 # see harness/scoring.py for the full rule set and rationale.
@@ -74,8 +74,11 @@ def call_model(client: Any, model: str, problem: str, max_tokens: int) -> Dict[s
         "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": problem}],
         "max_completion_tokens": max_tokens,
     }
-    if model.startswith("anthropic/"):
-        params["extra_body"] = {"provider": dict(_ANTHROPIC_PROVIDER_PIN)}
+    # Pin the serving stack the same way real runs do (reasoning_off=False — this probe measures
+    # accuracy with reasoning deliberately UNCONSTRAINED, so it must never send the disable).
+    pin_only = _or_extra_body(model, reasoning_off=False)
+    if pin_only:
+        params["extra_body"] = pin_only
     resp = client.chat.completions.create(**params)
     if getattr(resp, "choices", None) in (None, []):
         err = getattr(resp, "error", None) or (getattr(resp, "model_extra", None) or {}).get("error")

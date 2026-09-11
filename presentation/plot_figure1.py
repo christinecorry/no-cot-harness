@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Tuple
 import matplotlib.pyplot as plt
 
 from harness import config, stats as hstats
-from presentation.figures import apply_style
+from presentation.figures import apply_style, panel_ymax, peak_pct_of
 from presentation.plot_baseline_vs_peak import (
     DEFAULT_RUN_NAME, Panel, _baseline_condition, _cond_short_label, _draw_ci,
     _readable_text_color, _value_label_y, compute_peaks,
@@ -43,7 +43,7 @@ def plot_figure1(peaks: Dict[Tuple[str, str], Panel], models: List[str], dataset
     group_gap = 0.5
 
     for ax, dataset in zip(axes, datasets):
-        y_max = 100 if (uniform_scale or not dataset.startswith("nhop")) else 50
+        y_max = panel_ymax(dataset, peak_pct_of(peaks, models, [dataset]), uniform_scale)
         label_gap = y_max * 0.01
         x0 = 0.0
         xticks, xticklabels = [], []
@@ -81,6 +81,7 @@ def plot_figure1(peaks: Dict[Tuple[str, str], Panel], models: List[str], dataset
 
         ax.set_xticks(xticks)
         ax.set_xticklabels(xticklabels)
+        ax.margins(x=0.06)   # room for a wide condition label (e.g. "f=1000") on the last bar
         ax.set_ylabel("accuracy (%)")
         ax.set_ylim(0, y_max)
         ax.set_title(config.short_dataset(dataset))
@@ -88,7 +89,8 @@ def plot_figure1(peaks: Dict[Tuple[str, str], Panel], models: List[str], dataset
     from matplotlib.patches import Patch
     legend_handles = [Patch(facecolor="#888888", alpha=1.0, label="baseline"),
                       Patch(facecolor="#888888", alpha=0.75, label="peak (repeat or filler)")]
-    axes[0].legend(handles=legend_handles, loc="upper left", fontsize=8)
+    fig.legend(handles=legend_handles, loc="upper center", ncol=2, fontsize=8, frameon=False,
+               bbox_to_anchor=(0.5, 0.93))   # figure-level: no collision with tall first bars
 
     fig.suptitle("Baseline vs. Peak No-CoT Augmentation", fontsize=14, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.94))

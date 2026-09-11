@@ -1,0 +1,159 @@
+{
+  "meta": {
+    "test": "paired t-test (scipy ttest_rel), condition vs baseline",
+    "correction": "Holm-Bonferroni within each (model, dataset) panel",
+    "models": [
+      "openai/gpt-6-astra"
+    ],
+    "n": 100000,
+    "panel_pairs": {
+      "openai/gpt-6-astra/nhop_4": 594
+    },
+    "generated_at_utc": "2026-09-10T20:13:32+00:00"
+  },
+  "significance": [
+    {
+      "model": "openai/gpt-6-astra",
+      "dataset": "nhop_4",
+      "condition": "repeat_r2+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.3131,
+      "acc_cond": 0.436,
+      "delta": 0.1229,
+      "t": 7.018,
+      "p": 6.189593354631439e-12,
+      "p_holm": 1.2379186709262878e-11,
+      "sig_holm": true
+    },
+    {
+      "model": "openai/gpt-6-astra",
+      "dataset": "nhop_4",
+      "condition": "repeat_r3+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.3131,
+      "acc_cond": 0.4848,
+      "delta": 0.1717,
+      "t": 9.134,
+      "p": 1.030793885371664e-18,
+      "p_holm": 3.092381656114992e-18,
+      "sig_holm": true
+    },
+    {
+      "model": "openai/gpt-6-astra",
+      "dataset": "nhop_4",
+      "condition": "repeat_r5+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.3131,
+      "acc_cond": 0.5253,
+      "delta": 0.2121,
+      "t": 10.824,
+      "p": 4.847601324896833e-25,
+      "p_holm": 2.4238006624484164e-24,
+      "sig_holm": true
+    },
+    {
+      "model": "openai/gpt-6-astra",
+      "dataset": "nhop_4",
+      "condition": "repeat_r10+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.3131,
+      "acc_cond": 0.5741,
+      "delta": 0.2609,
+      "t": 12.622,
+      "p": 1.6176913474510836e-32,
+      "p_holm": 1.1323839432157586e-31,
+      "sig_holm": true
+    },
+    {
+      "model": "openai/gpt-6-astra",
+      "dataset": "nhop_4",
+      "condition": "repeat_r20+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.3131,
+      "acc_cond": 0.601,
+      "delta": 0.2879,
+      "t": 13.602,
+      "p": 7.178997576887054e-37,
+      "p_holm": 5.743198061509643e-36,
+      "sig_holm": true
+    },
+    {
+      "model": "openai/gpt-6-astra",
+      "dataset": "nhop_4",
+      "condition": "repeat_r40+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.3131,
+      "acc_cond": 0.6229,
+      "delta": 0.3098,
+      "t": 14.4,
+      "p": 1.5646350153758161e-40,
+      "p_holm": 1.564635015375816e-39,
+      "sig_holm": true
+    },
+    {
+      "model": "openai/gpt-6-astra",
+      "dataset": "nhop_4",
+      "condition": "filler_f10+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.3131,
+      "acc_cond": 0.4175,
+      "delta": 0.1044,
+      "t": 5.866,
+      "p": 7.428876690960415e-09,
+      "p_holm": 7.428876690960415e-09,
+      "sig_holm": true
+    },
+    {
+      "model": "openai/gpt-6-astra",
+      "dataset": "nhop_4",
+      "condition": "filler_f30+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.3131,
+      "acc_cond": 0.5034,
+      "delta": 0.1902,
+      "t": 9.999,
+      "p": 7.393540097316584e-22,
+      "p_holm": 2.9574160389266337e-21,
+      "sig_holm": true
+    },
+    {
+      "model": "openai/gpt-6-astra",
+      "dataset": "nhop_4",
+      "condition": "filler_f100+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.3131,
+      "acc_cond": 0.5589,
+      "delta": 0.2458,
+      "t": 11.906,
+      "p": 1.854522365710299e-29,
+      "p_holm": 1.1127134194261793e-28,
+      "sig_holm": true
+    },
+    {
+      "model": "openai/gpt-6-astra",
+      "dataset": "nhop_4",
+      "condition": "filler_f300+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.3131,
+      "acc_cond": 0.601,
+      "delta": 0.2879,
+      "t": 13.778,
+      "p": 1.142262783398938e-37,
+      "p_holm": 1.0280365050590442e-36,
+      "sig_holm": true
+    },
+    {
+      "model": "openai/gpt-6-astra",
+      "dataset": "nhop_4",
+      "condition": "filler_f1000+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.3131,
+      "acc_cond": 0.633,
+      "delta": 0.3199,
+      "t": 14.769,
+      "p": 2.9189804187356945e-42,
+      "p_holm": 3.210878460609264e-41,
+      "sig_holm": true
+    }
+  ]
+}
