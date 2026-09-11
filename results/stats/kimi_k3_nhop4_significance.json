@@ -1,0 +1,159 @@
+{
+  "meta": {
+    "test": "paired t-test (scipy ttest_rel), condition vs baseline",
+    "correction": "Holm-Bonferroni within each (model, dataset) panel",
+    "models": [
+      "moonshotai/kimi-k3"
+    ],
+    "n": 100000,
+    "panel_pairs": {
+      "moonshotai/kimi-k3/nhop_4": 594
+    },
+    "generated_at_utc": "2026-09-11T05:18:37+00:00"
+  },
+  "significance": [
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "repeat_r2+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.0202,
+      "acc_cond": 0.0269,
+      "delta": 0.0067,
+      "t": 0.784,
+      "p": 0.433229878285295,
+      "p_holm": 1.0,
+      "sig_holm": false
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "repeat_r3+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.0202,
+      "acc_cond": 0.0303,
+      "delta": 0.0101,
+      "t": 1.096,
+      "p": 0.27368554407209816,
+      "p_holm": 1.0,
+      "sig_holm": false
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "repeat_r5+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.0202,
+      "acc_cond": 0.0286,
+      "delta": 0.0084,
+      "t": 0.962,
+      "p": 0.3363461722156045,
+      "p_holm": 1.0,
+      "sig_holm": false
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "repeat_r10+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.0202,
+      "acc_cond": 0.032,
+      "delta": 0.0118,
+      "t": 1.348,
+      "p": 0.17814829395817752,
+      "p_holm": 1.0,
+      "sig_holm": false
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "repeat_r20+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.0202,
+      "acc_cond": 0.0253,
+      "delta": 0.0051,
+      "t": 0.577,
+      "p": 0.5641408726147068,
+      "p_holm": 1.0,
+      "sig_holm": false
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "repeat_r40+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.0202,
+      "acc_cond": 0.0387,
+      "delta": 0.0185,
+      "t": 1.863,
+      "p": 0.0629277753596326,
+      "p_holm": 0.6922055289559587,
+      "sig_holm": false
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "filler_f10+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.0202,
+      "acc_cond": 0.0118,
+      "delta": -0.0084,
+      "t": -1.213,
+      "p": 0.22555183121118583,
+      "p_holm": 1.0,
+      "sig_holm": false
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "filler_f30+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.0202,
+      "acc_cond": 0.0185,
+      "delta": -0.0017,
+      "t": -0.208,
+      "p": 0.8350300062984528,
+      "p_holm": 1.0,
+      "sig_holm": false
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "filler_f100+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.0202,
+      "acc_cond": 0.0253,
+      "delta": 0.0051,
+      "t": 0.6,
+      "p": 0.5489509201203333,
+      "p_holm": 1.0,
+      "sig_holm": false
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "filler_f300+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.0202,
+      "acc_cond": 0.0253,
+      "delta": 0.0051,
+      "t": 0.6,
+      "p": 0.5489509201203333,
+      "p_holm": 1.0,
+      "sig_holm": false
+    },
+    {
+      "model": "moonshotai/kimi-k3",
+      "dataset": "nhop_4",
+      "condition": "filler_f1000+md",
+      "n_pairs": 594,
+      "acc_baseline": 0.0202,
+      "acc_cond": 0.0202,
+      "delta": 0.0,
+      "t": 0.0,
+      "p": 1.0,
+      "p_holm": 1.0,
+      "sig_holm": false
+    }
+  ]
+}
