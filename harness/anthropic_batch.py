@@ -27,7 +27,10 @@ from .sweep import STORE_PATH, _cell_params, _cond_key, _score, _structured_fiel
 
 def _client() -> Any:
     import anthropic
-    return anthropic.Anthropic()
+    # Prefer the xlab research workspace key (see backends.AnthropicNativeBackend.client).
+    import os
+    return anthropic.Anthropic(
+        api_key=os.environ.get("ANTHROPIC_XLAB_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"))
 
 
 def estimate_batch_cost(cells: List[Dict[str, Any]]) -> float:
@@ -60,6 +63,7 @@ def estimate_batch_cost(cells: List[Dict[str, Any]]) -> float:
 _METHOD_FAMILY = {
     "openrouter_prefill": "prefill", "anthropic_native_prefill": "prefill",
     "openrouter_tool": "structured", "anthropic_native_tool": "structured",
+    "anthropic_native_tool_nothink": "structured",
     "openrouter_adaptive": "append", "append_noreason": "append", "anthropic_native_append": "append",
     "structured_json": "structured",
 }
@@ -204,6 +208,16 @@ def main(argv: List[str] | None = None) -> int:
     ap.add_argument("--run", choices=list(config.NAMED_RUNS))
     ap.add_argument("--models", help="comma-separated anthropic/* model ids")
     ap.add_argument("--n", type=int, default=None)
+    ap.add_argument("--method", default=None, choices=["prefill", "append", "structured"],
+                    help="force ONE method everywhere (mirrors sweep.py's flag); default: each "
+                         "model's static default in registry.py. Must be passed identically to "
+                         "--submit and its later --poll, since poll re-derives the cell map")
+    ap.add_argument("--recollect", action="store_true",
+                    help="with --submit: skip the cross-transport method-FAMILY dedup and "
+                         "re-collect cells another transport/channel already gathered (for "
+                         "deliberate re-measurement, e.g. the same channel with a changed "
+                         "request). Rows with the exact same store signature are still "
+                         "skipped, so resuming a --recollect run never re-pays finished cells")
     ap.add_argument("--max-budget-usd", type=float, default=None,
                     help="with --submit: abort (no batch created) if the batch-rate estimate "
                          "exceeds this")
@@ -215,12 +229,17 @@ def main(argv: List[str] | None = None) -> int:
             spec = {**spec, "models": args.models.split(",")}
         if args.n is not None:
             spec = {**spec, "n": args.n}
-        cells = enumerate_cells(spec, None, transport="anthropic_native")
-        covered = _covered_content_keys()
-        todo = [c for c in cells
-               if _content_key(c["model"], c["dataset"],
-                                _cond_key(c["cond"].label, c.get("match_demos", False)),
-                                c["item"]["id"], c["method"]) not in covered]
+        cells = enumerate_cells(spec, args.method, transport="anthropic_native")
+        if args.recollect:
+            from .sweep import load_done_sigs
+            done = load_done_sigs()   # exact signatures only — resume still skips finished cells
+            todo = [c for c in cells if c["sig"] not in done]
+        else:
+            covered = _covered_content_keys()
+            todo = [c for c in cells
+                   if _content_key(c["model"], c["dataset"],
+                                    _cond_key(c["cond"].label, c.get("match_demos", False)),
+                                    c["item"]["id"], c["method"]) not in covered]
         if not todo:
             print("nothing to submit; every cell is already covered.")
             return 0
@@ -247,7 +266,7 @@ def main(argv: List[str] | None = None) -> int:
             spec = {**spec, "models": args.models.split(",")}
         if args.n is not None:
             spec = {**spec, "n": args.n}
-        cells = enumerate_cells(spec, None, transport="anthropic_native")
+        cells = enumerate_cells(spec, args.method, transport="anthropic_native")
         cells_by_sig = {c["sig"]: c for c in cells}
         total_written = 0
         for batch_id in args.poll.split(","):

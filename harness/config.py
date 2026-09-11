@@ -32,11 +32,9 @@ HEADLINE_AXES = {"repeat": [1, 2, 3, 5, 10, 20, 40], "filler": [0, 10, 30, 100, 
 
 SMOKE_DEFAULT_DATASETS = ["gen_arithmetic", "comp_math"]
 
-
 def short_model(model: str) -> str:
     """A compact label for tables, e.g. 'anthropic/claude-opus-4.5' -> 'opus-4.5'."""
-    return model.split("/")[-1].replace("claude-", "")
-
+    return model.split("/")[-1].replace("claude-", "").replace("-preview", "")
 
 # Display names for figures/tables: drop the item-count suffix some dataset ids carry
 # (e.g. '_500' on the subset used for full-scale runs) since n is already shown separately
@@ -52,11 +50,9 @@ _DATASET_DISPLAY = {
     "nhop_4": "4-Hop",
 }
 
-
 def short_dataset(dataset: str) -> str:
     """A compact display label for a dataset id, e.g. 'gen_arithmetic_500' -> 'Gen-Arithmetic'."""
     return _DATASET_DISPLAY.get(dataset, dataset)
-
 
 # Per-provider color families for multi-model figures: every Anthropic model gets a shade of
 # red, every OpenAI model a shade of teal/blue, so the provider reads at a glance across a
@@ -64,6 +60,7 @@ def short_dataset(dataset: str) -> str:
 _PROVIDER_PALETTES: Dict[str, List[str]] = {
     "anthropic": ["4a1010", "c1440e", "e8998d"],  # dark maroon, burnt orange, light red
     "openai": ["1a7a6e", "3d5a80", "0f4c5c"],
+    "moonshotai": ["6a4c93", "9b72cf", "4a3268"],  # purple family — the open-weight lab
 }
 _OTHER_PALETTE = ["666666", "1a1a1a", "c9a227"]
 
@@ -74,8 +71,13 @@ _MODEL_COLOR_OVERRIDES: Dict[str, str] = {
     "anthropic/claude-opus-5": "4a1010",     # dark maroon
     "anthropic/claude-fable-5": "c1440e",    # burnt orange
     "anthropic/claude-opus-4.5": "e8998d",   # light red
+    "moonshotai/kimi-k3": "6a4c93",          # purple
+    "google/gemini-3.1-pro-preview": "2d64bc",  # muted cobalt — Google-blue hue, palette-matched
+                                                # saturation (llama's steel 3d5a80 stays distinct)
+    "anthropic/claude-fable-5.1": "8c2f0c",  # deep rust — anthropic family, between fable-5 and opus-5
+    "openai/gpt-6-astra": "0f4c5c",          # dark teal — the openai family's third shade
+                                             # (sol holds 1a7a6e; 3d5a80 is llama's in blog-2)
 }
-
 
 def model_colors(models: List[str]) -> Dict[str, str]:
     """model id -> hex color (no '#'), grouped by provider family (see above). Known models get
@@ -93,7 +95,6 @@ def model_colors(models: List[str]) -> Dict[str, str]:
         counters[provider] += 1
     return colors
 
-
 def conditions_for(axes: dict):
     """Distinct conditions implied a dataset's repeat/filler axes (baseline counted once)."""
     from . import conditions as C
@@ -101,7 +102,6 @@ def conditions_for(axes: dict):
     conds += [C.repeat(r) for r in axes.get("repeat", []) if r > 1]
     conds += [C.filler(f) for f in axes.get("filler", []) if f > 0]
     return conds
-
 
 # --- Named runs -------------------------------------------------------------------------------
 # One dict per named sweep: `models`, `n` (items per dataset), and `axes` (dataset id -> condition
@@ -193,6 +193,115 @@ SANITY_CHECK_100 = {
     },
 }
 
+# The full-scale kimi-k3 arm on the four blog-1 datasets (nhop_4 is its own spec below so the
+# arms keep separate aggregate/significance files).
+KIMI_K3_BLOG1 = {
+    "models": ["moonshotai/kimi-k3"],
+    "n": 100000,
+    "axes": {
+        "gen_arithmetic_500": dict(GEN_AXES, match_demos=True),
+        "comp_math_500": dict(COMP_AXES, match_demos=True),
+        "nhop_2": dict(HEADLINE_AXES, match_demos=True),
+        "nhop_3": dict(HEADLINE_AXES, match_demos=True),
+    },
+}
+
+NEWARM_31PRO = {   # gemini-3.1-pro alone, full blog-1 axes + nhop_4 (prefill + strict prompt)
+    "models": ["google/gemini-3.1-pro-preview"], "n": 100000,
+    "axes": {
+        "gen_arithmetic_500": dict(GEN_AXES, match_demos=True),
+        "comp_math_500": dict(COMP_AXES, match_demos=True),
+        "nhop_2": dict(HEADLINE_AXES, match_demos=True),
+        "nhop_3": dict(HEADLINE_AXES, match_demos=True),
+        "nhop_4": dict(HEADLINE_AXES, match_demos=True),
+    },
+}
+
+# Exp 1 (blog-2, 2026-08-11): PLAIN-demo arms for the three blog-1 models whose canonical
+# rows are matched — {r2, r10, f30, f100} × three dataset families, same channels as their
+# canonical rows (fable-5 structured/native, sol + kimi append). Paired per-item with the
+# existing +md rows to bound the matched-vs-plain demo effect. Baseline is re-collected
+# deliberately: identical rendering to the matched baseline, so it doubles as a temporal
+# drift control for the paired comparison. fable's spec is separate because transport is a
+# whole-invocation choice (run with --transport anthropic_native).
+# The four-dataset view (minus nhop_4) — what the cross-roster figures need; nhop_4 is the
+# single most expensive line and is a separate promotion decision.
+ASTRA_BLOG1 = {
+    "models": ["openai/gpt-6-astra"],
+    "n": 100000,
+    "axes": {
+        "gen_arithmetic_500": dict(GEN_AXES, match_demos=True),
+        "comp_math_500": dict(COMP_AXES, match_demos=True),
+        "nhop_2": dict(HEADLINE_AXES, match_demos=True),
+        "nhop_3": dict(HEADLINE_AXES, match_demos=True),
+    },
+}
+
+# 4-hop first (2026-09-10): the pilot put astra's 4-hop at 0.45 baseline -> 0.75 at r20 where
+# every earlier model sat at a ~0.02 cliff, so this dataset is collected ahead of the others
+# while the key is topped up. Same cells/sigs as astra_cm's nhop_4 slice — astra_cm resumes
+# over them at zero cost.
+ASTRA_NHOP4 = {
+    "models": ["openai/gpt-6-astra"],
+    "n": 100000,
+    "axes": {"nhop_4": dict(HEADLINE_AXES, match_demos=True)},
+}
+
+# The blog-2 (astra) figure set (2026-09-10/11): six models in release order over all five
+# datasets. PRESENTATION-ONLY — every cell is already in the store (the
+# originals from condition_matched_500 / opus5_native_cm, k3 from kimi_k3_cm/kimi_k3_blog1,
+# astra from astra_cm/astra_blog1/astra_nhop4), so figures drawn from it submit nothing.
+# Stats are recomputed from the store (last clean row per cell, errors excluded), which is
+# also what corrects gpt-5.6-sol's n-hop cells relative to the originally published figures
+# (see analysis/rebuild_sol_aggregate.py). kimi-k3's nhop_4 arm is the 100-item tier.
+BLOG1_WITH_ASTRA = {
+    # RELEASE order (OpenRouter listing dates): opus-4.5 2025-11-24, gemini-3.1-pro 2026-02-19,
+    # fable-5 06-09, sol 07-09, kimi-k3 07-16, opus-5 07-24, fable-5.1 09-01, astra 09-04.
+    # The two Opus models are OMITTED from this set (Christine, 2026-09-11): their results were
+    # presented in the blog-1 post and add clutter here; their rows stay in the store.
+    "models": ["google/gemini-3.1-pro-preview", "anthropic/claude-fable-5", "openai/gpt-5.6-sol",
+               "moonshotai/kimi-k3", "anthropic/claude-fable-5.1", "openai/gpt-6-astra"],
+    "n": 100000,
+    "axes": {
+        "gen_arithmetic_500": dict(GEN_AXES, match_demos=True),
+        "comp_math_500": dict(COMP_AXES, match_demos=True),
+        "nhop_2": dict(HEADLINE_AXES, match_demos=True),
+        "nhop_3": dict(HEADLINE_AXES, match_demos=True),
+        "nhop_4": dict(HEADLINE_AXES, match_demos=True),
+    },
+}
+
+# Fable 5.1 arm (2026-09-10): the full condition-matched grid, all five datasets, native
+# transport (append = strict prompt + adaptive/low effort; see registry). Collected through
+# harness.anthropic_batch (50% off + genuine prompt caching); sync native resume is
+# sig-compatible (same anthropic_native_append label). Pilot with `--n 20` first.
+# Dataset ORDER is deliberate (sync collection proceeds in spec order; sigs are unaffected):
+# the arm was sized to a fixed balance, so the datasets that inform the astra comparison most
+# come first and near-saturated gen_arithmetic last. Collected SYNC on the native transport
+# (not batch): a batch processes a cell's rows concurrently and mostly cache-WRITES (pilot:
+# 79% writes, 12% reads, $54 vs $29 estimated), while sequential sync reads the warmed
+# prefix at 5.1's $0.25/M cache-hit rate — ~$410 vs ~$1,240 for the full grid.
+FABLE51_CM = {
+    "models": ["anthropic/claude-fable-5.1"],
+    "n": 100000,
+    "axes": {
+        "comp_math_500": dict(COMP_AXES, match_demos=True),
+        "nhop_3": dict(HEADLINE_AXES, match_demos=True),
+        "nhop_2": dict(HEADLINE_AXES, match_demos=True),
+        "nhop_4": dict(HEADLINE_AXES, match_demos=True),
+        "gen_arithmetic_500": dict(GEN_AXES, match_demos=True),
+    },
+}
+
+# kimi-k3 4-hop completion (2026-09-11): extend the 100-item pilot tier to the full 594-item
+# set so the blog-2 roster is uniform on 4-hop. Same cells/sigs as kimi_k3_cm's nhop_4 slice,
+# so the pilot rows carry over.
+KIMI_K3_NHOP4 = {
+    "models": ["moonshotai/kimi-k3"],
+    "n": 100000,
+    "axes": {"nhop_4": dict(HEADLINE_AXES, match_demos=True)},
+}
+
 NAMED_RUNS: dict[str, dict] = {
     "pilot": PILOT_SPEC,
     "plain_demos": PLAIN_DEMOS,
@@ -200,4 +309,11 @@ NAMED_RUNS: dict[str, dict] = {
     "condition_matched_trimmed": CONDITION_MATCHED_TRIMMED,
     "condition_matched_500": CONDITION_MATCHED_500,
     "sanity_check_100": SANITY_CHECK_100,
+    "kimi_k3_blog1": KIMI_K3_BLOG1,
+    "newarm_31pro": NEWARM_31PRO,
+    "astra_blog1": ASTRA_BLOG1,
+    "astra_nhop4": ASTRA_NHOP4,
+    "blog1_with_astra": BLOG1_WITH_ASTRA,
+    "fable51_cm": FABLE51_CM,
+    "kimi_k3_nhop4": KIMI_K3_NHOP4,
 }
