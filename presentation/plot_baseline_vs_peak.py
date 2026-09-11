@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import matplotlib.pyplot as plt
 
 from harness import config, stats as hstats
-from presentation.figures import apply_style
+from presentation.figures import apply_style, panel_ymax, peak_pct_of
 
 DEFAULT_RUN_NAME = "condition_matched_500"
 
@@ -128,7 +128,7 @@ def plot_one_dataset(dataset: str, peaks: Dict[Tuple[str, str], Panel], models: 
     group_gap = 1.0
     x0 = 0.0
     xticks, xticklabels = [], []
-    y_max = 50 if dataset.startswith("nhop") else 100
+    y_max = panel_ymax(dataset, peak_pct_of(peaks, models, [dataset]))
     # A flat data-unit offset (e.g. "1.0") would sit at a different physical height on a 0-50
     # axis than on a 0-100 one, since the same figure height maps to twice the pixels-per-unit —
     # scale the gap by y_max so every dataset's labels sit the same visual distance from the bar.

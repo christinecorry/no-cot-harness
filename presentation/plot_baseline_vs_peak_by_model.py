@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Tuple
 import matplotlib.pyplot as plt
 
 from harness import config, stats as hstats
-from presentation.figures import apply_style
+from presentation.figures import apply_style, panel_ymax, peak_pct_of
 from presentation.plot_baseline_vs_peak import (
     DEFAULT_RUN_NAME, Panel, _baseline_condition, _cond_short_label, _draw_ci,
     _readable_text_color, _value_label_y, compute_peaks,
@@ -46,6 +46,8 @@ def plot_one_model(model: str, peaks: Dict[Tuple[str, str], Panel], datasets: Li
                    out_path: Path, color_hex: str, uniform_scale: bool = False,
                    cis: Dict[Tuple[str, str, str], Tuple[float, float]] | None = None) -> Path:
     groups = _dataset_groups(datasets, uniform_scale)
+    groups = [(t, ds, panel_ymax(ds[0] if ds else "", uniform_scale=uniform_scale))
+              for (t, ds, _ymax) in groups]   # every panel 0-100 (see figures.panel_ymax)
     fig, axes = plt.subplots(1, len(groups),
                              figsize=(max(7, 2.6 * sum(len(g[1]) for g in groups)), 5.5))
     if len(groups) == 1:
@@ -99,7 +101,10 @@ def plot_one_model(model: str, peaks: Dict[Tuple[str, str], Panel], datasets: Li
     from matplotlib.patches import Patch
     legend_handles = [Patch(facecolor="#888888", alpha=1.0, label="baseline"),
                       Patch(facecolor="#888888", alpha=0.75, label="peak repeat / peak filler")]
-    axes[0].legend(handles=legend_handles, loc="upper right", fontsize=8)
+    # Figure-level, under the title: an in-axes legend collided with the value labels once a
+    # model's bars reached the top of the panel (gpt-6-astra on gen/comp).
+    fig.legend(handles=legend_handles, loc="upper center", ncol=2, fontsize=8, frameon=False,
+               bbox_to_anchor=(0.5, 0.93))
 
     fig.suptitle(f"Baseline vs peak — {config.short_model(model)}", fontsize=13, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.94))

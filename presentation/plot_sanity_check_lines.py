@@ -40,7 +40,7 @@ from typing import Dict, List, Tuple
 import matplotlib.pyplot as plt
 
 from harness import config, registry, schema
-from presentation.figures import MARKERS, apply_style, cond_label, mask_adaptive
+from presentation.figures import MARKERS, apply_style, cond_label, mask_adaptive, panel_ymax
 
 DEFAULT_RUN_NAME = "sanity_check_100"
 MIN_N_DEFAULT = 20
@@ -132,10 +132,7 @@ def plot_one_dataset(dataset: str, axes_spec: dict, counts: dict, min_n: int, mo
         ax.set_xlabel(xlabel)
         ax.set_ylabel("accuracy (%)")
         ax.set_title(f"{title} — {config.short_dataset(dataset)} (n={target_n})")
-        # Multi-hop accuracy stays low everywhere (nhop_3/nhop_4 top out well under 20%) — a
-        # 0-100 scale flattens the real differences between conditions/models into noise-looking
-        # wiggles near the axis floor, so nhop datasets get a tighter 0-50 range instead.
-        ax.set_ylim(0, 50 if dataset.startswith("nhop") else 100)
+        ax.set_ylim(0, panel_ymax(dataset))
         if ax.get_legend_handles_labels()[0]:
             ax.legend(ncol=1, fontsize=8)
 
